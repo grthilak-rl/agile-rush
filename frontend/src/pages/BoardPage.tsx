@@ -113,6 +113,10 @@ const BOARD_COLUMNS = [
   { status: 'done' as const, label: 'Done', emoji: '\u2705', color: '#10B981' },
 ] as const;
 
+const STATUS_COLORS: Record<string, string> = Object.fromEntries(
+  BOARD_COLUMNS.map((c) => [c.status, c.color])
+);
+
 // ---------------------------------------------------------------------------
 // SortableBoardCard
 // ---------------------------------------------------------------------------
@@ -120,9 +124,11 @@ const BOARD_COLUMNS = [
 function SortableBoardCard({
   item,
   onOpen,
+  columnColor,
 }: {
   item: BacklogItem;
   onOpen: (item: BacklogItem) => void;
+  columnColor: string;
 }) {
   const {
     attributes,
@@ -217,6 +223,21 @@ function SortableBoardCard({
           {item.title}
         </div>
 
+        {/* Acceptance criteria progress bar */}
+        {item.acceptance_criteria && item.acceptance_criteria.length > 0 && (() => {
+          const total = item.acceptance_criteria.length;
+          const checked = item.acceptance_criteria.filter((c) => c.checked).length;
+          const pct = Math.round((checked / total) * 100);
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <div style={{ flex: 1, height: 4, borderRadius: 999, backgroundColor: '#E2E8F0', overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, backgroundColor: columnColor, transition: 'width 200ms ease' }} />
+              </div>
+              <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600, whiteSpace: 'nowrap' }}>{checked}/{total}</span>
+            </div>
+          );
+        })()}
+
         {/* Bottom row: assignee + points */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {item.assignee ? (
@@ -282,6 +303,20 @@ function StaticBoardCard({ item }: { item: BacklogItem }) {
       <div style={{ fontSize: 13, fontWeight: 500, color: '#0F172A', marginBottom: 10 }}>
         {item.title}
       </div>
+      {item.acceptance_criteria && item.acceptance_criteria.length > 0 && (() => {
+        const total = item.acceptance_criteria.length;
+        const checked = item.acceptance_criteria.filter((c) => c.checked).length;
+        const pct = Math.round((checked / total) * 100);
+        const color = STATUS_COLORS[item.status] || '#6366F1';
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <div style={{ flex: 1, height: 4, borderRadius: 999, backgroundColor: '#E2E8F0', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, backgroundColor: color }} />
+            </div>
+            <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600, whiteSpace: 'nowrap' }}>{checked}/{total}</span>
+          </div>
+        );
+      })()}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {item.assignee ? (
           <Avatar name={item.assignee.full_name} size={24} />
@@ -437,7 +472,7 @@ function DroppableColumn({
       >
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           {items.map((item) => (
-            <SortableBoardCard key={item.id} item={item} onOpen={onOpenItem} />
+            <SortableBoardCard key={item.id} item={item} onOpen={onOpenItem} columnColor={column.color} />
           ))}
         </SortableContext>
         {items.length === 0 && !isOver && (
@@ -476,6 +511,13 @@ export default function BoardPage() {
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // -------------------------------------------------------------------------
+  // Sprint goal inline edit
+  // -------------------------------------------------------------------------
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalValue, setGoalValue] = useState('');
+  const goalInputRef = useRef<HTMLInputElement>(null);
 
   // -------------------------------------------------------------------------
   // DnD state
@@ -553,6 +595,33 @@ export default function BoardPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // -------------------------------------------------------------------------
+  // Sprint goal save
+  // -------------------------------------------------------------------------
+  const saveGoal = useCallback(async (value: string) => {
+    if (!projectId || !activeSprint) return;
+    try {
+      const res = await sprintsApi.update(projectId, activeSprint.id, { goal: value });
+      setActiveSprint(res.data);
+    } catch {
+      addToast('error', 'Failed to update sprint goal');
+    }
+  }, [projectId, activeSprint, addToast]);
+
+  const handleGoalEdit = useCallback(() => {
+    setGoalValue(activeSprint?.goal || '');
+    setEditingGoal(true);
+    setTimeout(() => goalInputRef.current?.focus(), 0);
+  }, [activeSprint]);
+
+  const handleGoalSave = useCallback(() => {
+    setEditingGoal(false);
+    const trimmed = goalValue.trim();
+    if (trimmed !== (activeSprint?.goal || '')) {
+      saveGoal(trimmed);
+    }
+  }, [goalValue, activeSprint, saveGoal]);
 
   // -------------------------------------------------------------------------
   // Derived state
@@ -1259,14 +1328,15 @@ export default function BoardPage() {
   }
 
   if (!activeSprint) {
+    const planningSprint = sprints.find((s) => s.status === 'planning');
     return (
       <EmptyState
         icon="🏃"
         title="No active sprint"
-        description="Start a sprint from the backlog or sprints page to see your board."
+        description="Start a sprint to see your board. You can also manage sprints from the Sprints page."
         action={{
-          label: 'Go to Backlog',
-          onClick: () => navigate(`/projects/${projectId}/backlog`),
+          label: planningSprint ? 'Start Sprint' : 'Go to Sprints',
+          onClick: () => navigate(`/projects/${projectId}/sprints`),
         }}
       />
     );
@@ -1303,9 +1373,42 @@ export default function BoardPage() {
           </Button>
         </div>
 
-        {activeSprint.goal && (
-          <p style={{ fontSize: 14, color: '#64748B', marginBottom: 12 }}>
-            {activeSprint.goal}
+        {editingGoal ? (
+          <input
+            ref={goalInputRef}
+            value={goalValue}
+            onChange={(e) => setGoalValue(e.target.value)}
+            onBlur={handleGoalSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleGoalSave();
+              if (e.key === 'Escape') setEditingGoal(false);
+            }}
+            placeholder="Add a sprint goal..."
+            style={{
+              fontSize: 14,
+              color: '#334155',
+              marginBottom: 12,
+              width: '100%',
+              border: '1px solid #CBD5E1',
+              borderRadius: 6,
+              padding: '6px 10px',
+              outline: 'none',
+              background: '#FFFFFF',
+            }}
+          />
+        ) : (
+          <p
+            onClick={handleGoalEdit}
+            style={{
+              fontSize: 14,
+              color: activeSprint.goal ? '#64748B' : '#94A3B8',
+              marginBottom: 12,
+              cursor: 'pointer',
+              minHeight: 20,
+            }}
+            title="Click to edit sprint goal"
+          >
+            {activeSprint.goal || 'Add a sprint goal...'}
           </p>
         )}
 
@@ -1325,7 +1428,7 @@ export default function BoardPage() {
                 whiteSpace: 'nowrap',
               }}
             >
-              {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} left
+              {daysRemaining} {daysRemaining !== 1 ? 'DAYS' : 'DAY'} LEFT
             </span>
           )}
         </div>

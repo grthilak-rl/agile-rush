@@ -27,7 +27,7 @@ def seed():
         # ---- User ----
         print("Creating user...")
         user = User(
-            id=uuid4(),
+            id=str(uuid4()),
             email="raj@agilerush.com",
             full_name="Rajthilak",
             hashed_password=hash_password("password123"),
@@ -38,7 +38,7 @@ def seed():
         # ---- Projects ----
         print("Creating projects...")
         project1 = Project(
-            id=uuid4(),
+            id=str(uuid4()),
             name="Phoenix Platform",
             client_name="TechVentures Inc.",
             description="A next-generation SaaS platform for enterprise resource management with real-time analytics and AI-powered insights.",
@@ -48,7 +48,7 @@ def seed():
             color="#2563EB",
         )
         project2 = Project(
-            id=uuid4(),
+            id=str(uuid4()),
             name="MedConnect Portal",
             client_name="HealthFirst Corp",
             description="Patient management portal with telemedicine capabilities, appointment scheduling, and electronic health records integration.",
@@ -64,7 +64,7 @@ def seed():
         print("Creating sprints...")
         now = datetime.now(timezone.utc)
         sprint1 = Sprint(
-            id=uuid4(),
+            id=str(uuid4()),
             project_id=project1.id,
             name="Sprint 14",
             goal="Complete OAuth 2.0 integration and dashboard analytics MVP",
@@ -75,7 +75,7 @@ def seed():
             status=SprintStatus.active,
         )
         sprint2 = Sprint(
-            id=uuid4(),
+            id=str(uuid4()),
             project_id=project2.id,
             name="Sprint 8",
             goal="Implement patient intake forms and appointment scheduling",
@@ -90,7 +90,7 @@ def seed():
         print("Creating backlog items for Phoenix Platform...")
         items_p1 = [
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=sprint1.id,
                 title="User authentication with OAuth 2.0",
@@ -103,14 +103,14 @@ def seed():
                 assignee_id=user.id,
                 labels=["auth", "security"],
                 acceptance_criteria=[
-                    "Users can sign in with Google OAuth",
-                    "Users can sign in with GitHub OAuth",
-                    "Token refresh works automatically",
-                    "Session persists across browser restarts",
+                    {"text": "Users can sign in with Google OAuth", "checked": True},
+                    {"text": "Users can sign in with GitHub OAuth", "checked": True},
+                    {"text": "Token refresh works automatically", "checked": False},
+                    {"text": "Session persists across browser restarts", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=sprint1.id,
                 title="Dashboard analytics widgets",
@@ -123,13 +123,13 @@ def seed():
                 assignee_id=user.id,
                 labels=["dashboard", "charts"],
                 acceptance_criteria=[
-                    "Revenue chart displays last 30 days data",
-                    "User growth chart shows weekly trends",
-                    "Widgets are responsive on all screen sizes",
+                    {"text": "Revenue chart displays last 30 days data", "checked": False},
+                    {"text": "User growth chart shows weekly trends", "checked": False},
+                    {"text": "Widgets are responsive on all screen sizes", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=sprint1.id,
                 title="Fix memory leak in WebSocket connection",
@@ -142,12 +142,12 @@ def seed():
                 assignee_id=user.id,
                 labels=["performance", "critical-fix"],
                 acceptance_criteria=[
-                    "No memory growth after 48 hours of continuous connection",
-                    "WebSocket reconnection handles gracefully",
+                    {"text": "No memory growth after 48 hours of continuous connection", "checked": True},
+                    {"text": "WebSocket reconnection handles gracefully", "checked": True},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=sprint1.id,
                 title="API rate limiting middleware",
@@ -160,13 +160,13 @@ def seed():
                 assignee_id=user.id,
                 labels=["api", "security"],
                 acceptance_criteria=[
-                    "Free tier limited to 100 requests/minute",
-                    "Pro tier limited to 1000 requests/minute",
-                    "Rate limit headers included in responses",
+                    {"text": "Free tier limited to 100 requests/minute", "checked": True},
+                    {"text": "Pro tier limited to 1000 requests/minute", "checked": True},
+                    {"text": "Rate limit headers included in responses", "checked": True},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=None,
                 title="Multi-tenant data isolation",
@@ -179,13 +179,13 @@ def seed():
                 assignee_id=None,
                 labels=["architecture", "security"],
                 acceptance_criteria=[
-                    "Tenant data is completely isolated",
-                    "Cross-tenant queries are impossible",
-                    "Performance impact is less than 5%",
+                    {"text": "Tenant data is completely isolated", "checked": False},
+                    {"text": "Cross-tenant queries are impossible", "checked": False},
+                    {"text": "Performance impact is less than 5%", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=None,
                 title="Export data to CSV and PDF",
@@ -198,13 +198,13 @@ def seed():
                 assignee_id=None,
                 labels=["export", "reports"],
                 acceptance_criteria=[
-                    "CSV export includes all visible columns",
-                    "PDF export uses branded template",
-                    "Large exports are handled asynchronously",
+                    {"text": "CSV export includes all visible columns", "checked": False},
+                    {"text": "PDF export uses branded template", "checked": False},
+                    {"text": "Large exports are handled asynchronously", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=sprint1.id,
                 title="Refactor database query optimization",
@@ -217,13 +217,13 @@ def seed():
                 assignee_id=user.id,
                 labels=["performance", "database"],
                 acceptance_criteria=[
-                    "All N+1 queries eliminated",
-                    "Average query time reduced by 50%",
-                    "Missing indexes added",
+                    {"text": "All N+1 queries eliminated", "checked": True},
+                    {"text": "Average query time reduced by 50%", "checked": True},
+                    {"text": "Missing indexes added", "checked": True},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 sprint_id=None,
                 title="Notification system with email and push",
@@ -236,10 +236,10 @@ def seed():
                 assignee_id=None,
                 labels=["notifications", "email"],
                 acceptance_criteria=[
-                    "Users receive in-app notifications in real-time",
-                    "Email notifications sent for critical events",
-                    "Push notifications work on mobile devices",
-                    "Users can configure notification preferences",
+                    {"text": "Users receive in-app notifications in real-time", "checked": False},
+                    {"text": "Email notifications sent for critical events", "checked": False},
+                    {"text": "Push notifications work on mobile devices", "checked": False},
+                    {"text": "Users can configure notification preferences", "checked": False},
                 ],
             ),
         ]
@@ -250,7 +250,7 @@ def seed():
         print("Creating backlog items for MedConnect Portal...")
         items_p2 = [
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 sprint_id=sprint2.id,
                 title="Patient intake form builder",
@@ -263,13 +263,13 @@ def seed():
                 assignee_id=user.id,
                 labels=["forms", "hipaa"],
                 acceptance_criteria=[
-                    "Forms support text, checkbox, dropdown, and signature fields",
-                    "Form data is encrypted at rest",
-                    "Forms can be shared via secure link",
+                    {"text": "Forms support text, checkbox, dropdown, and signature fields", "checked": False},
+                    {"text": "Form data is encrypted at rest", "checked": False},
+                    {"text": "Forms can be shared via secure link", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 sprint_id=sprint2.id,
                 title="Appointment scheduling with calendar sync",
@@ -282,13 +282,13 @@ def seed():
                 assignee_id=user.id,
                 labels=["scheduling", "calendar"],
                 acceptance_criteria=[
-                    "Patients can book from available time slots",
-                    "Providers see appointments synced with their calendar",
-                    "Automated reminders sent 24 hours before",
+                    {"text": "Patients can book from available time slots", "checked": True},
+                    {"text": "Providers see appointments synced with their calendar", "checked": False},
+                    {"text": "Automated reminders sent 24 hours before", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 sprint_id=sprint2.id,
                 title="Fix prescription dosage validation bug",
@@ -301,13 +301,13 @@ def seed():
                 assignee_id=user.id,
                 labels=["prescription", "critical-fix"],
                 acceptance_criteria=[
-                    "Dosage validation checks against medication database",
-                    "Warning displayed for doses near maximum",
-                    "Error prevents submission for doses exceeding maximum",
+                    {"text": "Dosage validation checks against medication database", "checked": True},
+                    {"text": "Warning displayed for doses near maximum", "checked": True},
+                    {"text": "Error prevents submission for doses exceeding maximum", "checked": True},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 sprint_id=None,
                 title="Telemedicine video consultation",
@@ -320,14 +320,14 @@ def seed():
                 assignee_id=None,
                 labels=["telemedicine", "video"],
                 acceptance_criteria=[
-                    "Stable video call between patient and provider",
-                    "Screen sharing capability",
-                    "Recording with patient consent",
-                    "Works on mobile browsers",
+                    {"text": "Stable video call between patient and provider", "checked": False},
+                    {"text": "Screen sharing capability", "checked": False},
+                    {"text": "Recording with patient consent", "checked": False},
+                    {"text": "Works on mobile browsers", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 sprint_id=None,
                 title="EHR integration with HL7 FHIR",
@@ -340,13 +340,13 @@ def seed():
                 assignee_id=None,
                 labels=["ehr", "fhir", "integration"],
                 acceptance_criteria=[
-                    "Patient demographics sync with external EHR",
-                    "Lab results imported automatically",
-                    "Medication list stays in sync",
+                    {"text": "Patient demographics sync with external EHR", "checked": False},
+                    {"text": "Lab results imported automatically", "checked": False},
+                    {"text": "Medication list stays in sync", "checked": False},
                 ],
             ),
             BacklogItem(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 sprint_id=sprint2.id,
                 title="Patient portal accessibility audit",
@@ -359,9 +359,9 @@ def seed():
                 assignee_id=user.id,
                 labels=["accessibility", "compliance"],
                 acceptance_criteria=[
-                    "All pages pass WCAG 2.1 AA automated checks",
-                    "Screen reader navigation tested and working",
-                    "Color contrast meets minimum ratios",
+                    {"text": "All pages pass WCAG 2.1 AA automated checks", "checked": True},
+                    {"text": "Screen reader navigation tested and working", "checked": False},
+                    {"text": "Color contrast meets minimum ratios", "checked": True},
                 ],
             ),
         ]
@@ -372,7 +372,7 @@ def seed():
         print("Creating activity logs...")
         activities = [
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 user_id=user.id,
                 action=ActionType.created,
@@ -382,7 +382,7 @@ def seed():
                 created_at=now - timedelta(days=3),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 user_id=user.id,
                 action=ActionType.moved,
@@ -392,7 +392,7 @@ def seed():
                 created_at=now - timedelta(days=2),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 user_id=user.id,
                 action=ActionType.completed,
@@ -402,7 +402,7 @@ def seed():
                 created_at=now - timedelta(days=1),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 user_id=user.id,
                 action=ActionType.completed,
@@ -412,7 +412,7 @@ def seed():
                 created_at=now - timedelta(hours=12),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project1.id,
                 user_id=user.id,
                 action=ActionType.created,
@@ -422,7 +422,7 @@ def seed():
                 created_at=now - timedelta(days=5),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 user_id=user.id,
                 action=ActionType.created,
@@ -432,7 +432,7 @@ def seed():
                 created_at=now - timedelta(days=4),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 user_id=user.id,
                 action=ActionType.completed,
@@ -442,7 +442,7 @@ def seed():
                 created_at=now - timedelta(hours=6),
             ),
             ActivityLog(
-                id=uuid4(),
+                id=str(uuid4()),
                 project_id=project2.id,
                 user_id=user.id,
                 action=ActionType.updated,

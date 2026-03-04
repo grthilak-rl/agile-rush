@@ -464,7 +464,7 @@ export default function ProjectOverviewPage() {
                   await sprintsApi.start(projectId, createRes.data.id);
                   addToast('success', `${createRes.data.name} created and started`);
                 }
-                window.location.reload();
+                navigate(`/projects/${projectId}/board`);
               } catch {
                 addToast('error', 'Failed to start sprint');
               } finally {
