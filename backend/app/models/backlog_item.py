@@ -5,7 +5,6 @@ from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from sqlalchemy import Uuid
 
 
 class ItemType(str, enum.Enum):
@@ -32,9 +31,9 @@ class ItemStatus(str, enum.Enum):
 class BacklogItem(Base):
     __tablename__ = "backlog_items"
 
-    id: Mapped[str] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    project_id = mapped_column(Uuid, ForeignKey("projects.id"), nullable=False)
-    sprint_id = mapped_column(Uuid, ForeignKey("sprints.id"), nullable=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    project_id = mapped_column(String(36), ForeignKey("projects.id"), nullable=False)
+    sprint_id = mapped_column(String(36), ForeignKey("sprints.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(String(5000), nullable=True)
     type: Mapped[str] = mapped_column(
@@ -48,7 +47,7 @@ class BacklogItem(Base):
     )
     story_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    assignee_id = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    assignee_id = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     labels = mapped_column(JSON, default=list, nullable=True)
     acceptance_criteria = mapped_column(JSON, nullable=True)
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

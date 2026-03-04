@@ -5,7 +5,6 @@ from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from sqlalchemy import Uuid
 
 
 class ProjectType(str, enum.Enum):
@@ -17,7 +16,7 @@ class ProjectType(str, enum.Enum):
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[str] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(String(2000), nullable=True)
@@ -25,7 +24,7 @@ class Project(Base):
         Enum(ProjectType, name="project_type_enum", native_enum=False), default=ProjectType.contract, nullable=False
     )
     default_sprint_duration: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
-    owner_id = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    owner_id = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#2563EB")
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

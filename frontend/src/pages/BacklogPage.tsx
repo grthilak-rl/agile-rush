@@ -14,6 +14,23 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  DragOverlay,
+  useDroppable,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { backlogApi, sprintsApi } from '../api/client';
 import { useToast } from '../components/ui/Toast';
 import type { BacklogItem, Sprint, AcceptanceCriteria } from '../types';
@@ -105,6 +122,217 @@ function formatDate(dateStr: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Sortable Item Row (needs useSortable hook, so must be its own component)
+// ---------------------------------------------------------------------------
+
+function SortableItemRow({
+  item,
+  onOpen,
+}: {
+  item: BacklogItem;
+  onOpen: (item: BacklogItem) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const cfg = TYPE_CONFIG[item.type];
+  const TypeIcon = cfg.icon;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+      }}
+    >
+      <div
+        onClick={() => onOpen(item)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '12px 16px',
+          backgroundColor: '#FAFBFC',
+          borderRadius: 10,
+          borderLeft: `4px solid ${cfg.color}`,
+          cursor: 'pointer',
+          transition: 'background-color 150ms ease, box-shadow 150ms ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = '#FFFFFF';
+          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = '#FAFBFC';
+          e.currentTarget.style.boxShadow = 'none';
+        }}
+      >
+        {/* Drag handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          style={{ cursor: 'grab', flexShrink: 0, touchAction: 'none' }}
+        >
+          <GripVertical size={16} color="#CBD5E1" />
+        </div>
+
+        {/* Type icon */}
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            minWidth: 28,
+            borderRadius: 6,
+            backgroundColor: `${cfg.color}15`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <TypeIcon size={14} color={cfg.color} strokeWidth={2.5} />
+        </div>
+
+        {/* Title + labels */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: '#0F172A',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {item.title}
+          </div>
+          {item.labels.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+              {item.labels.map((label) => (
+                <Badge
+                  key={label}
+                  label={label}
+                  color={hashStringToColor(label)}
+                  style={{ fontSize: 10, padding: '1px 6px' }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Priority */}
+        <PriorityBadge priority={item.priority} />
+
+        {/* Points */}
+        <PointsBadge points={item.story_points} size={28} />
+
+        {/* Assignee */}
+        {item.assignee ? (
+          <Avatar name={item.assignee.full_name} size={28} />
+        ) : (
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              minWidth: 28,
+              borderRadius: '50%',
+              border: '1.5px dashed #CBD5E1',
+              backgroundColor: '#F8FAFC',
+            }}
+            title="Unassigned"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Static Item Row (for DragOverlay — no hooks)
+// ---------------------------------------------------------------------------
+
+function StaticItemRow({ item }: { item: BacklogItem }) {
+  const cfg = TYPE_CONFIG[item.type];
+  const TypeIcon = cfg.icon;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '12px 16px',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 10,
+        borderLeft: `4px solid ${cfg.color}`,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        width: '100%',
+      }}
+    >
+      <GripVertical size={16} color="#CBD5E1" style={{ flexShrink: 0 }} />
+      <div
+        style={{
+          width: 28, height: 28, minWidth: 28, borderRadius: 6,
+          backgroundColor: `${cfg.color}15`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}
+      >
+        <TypeIcon size={14} color={cfg.color} strokeWidth={2.5} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 500, color: '#0F172A' }}>
+        {item.title}
+      </div>
+      <PriorityBadge priority={item.priority} />
+      <PointsBadge points={item.story_points} size={28} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Droppable Section wrapper
+// ---------------------------------------------------------------------------
+
+function DroppableSection({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        marginTop: 8,
+        minHeight: 48,
+        padding: 4,
+        borderRadius: 10,
+        border: isOver ? '2px dashed #3B82F6' : '2px dashed transparent',
+        backgroundColor: isOver ? '#EFF6FF' : 'transparent',
+        transition: 'all 150ms ease',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -148,7 +376,6 @@ export default function BacklogPage() {
   const [formCriteria, setFormCriteria] = useState<AcceptanceCriteria[]>([]);
 
   // Auto-save
-  const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFadeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,6 +386,9 @@ export default function BacklogPage() {
 
   // Create mode loading
   const [creating, setCreating] = useState(false);
+
+  // Drag & drop
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   // Title input ref
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -244,6 +474,124 @@ export default function BacklogPage() {
     (sum, i) => sum + (i.story_points || 0),
     0
   );
+
+  // -----------------------------------------------------------------------
+  // Drag & drop
+  // -----------------------------------------------------------------------
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  const activeItem = activeId ? items.find((i) => i.id === activeId) ?? null : null;
+
+  function findContainer(itemId: string): 'sprint' | 'backlog' {
+    const item = items.find((i) => i.id === itemId);
+    if (item && activeSprint && item.sprint_id === activeSprint.id) return 'sprint';
+    return 'backlog';
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string);
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeContainer = findContainer(active.id as string);
+    // over.id can be a section id ('sprint'/'backlog') or an item id
+    let overContainer: 'sprint' | 'backlog';
+    if (over.id === 'sprint' || over.id === 'backlog') {
+      overContainer = over.id as 'sprint' | 'backlog';
+    } else {
+      overContainer = findContainer(over.id as string);
+    }
+
+    if (activeContainer === overContainer) return;
+
+    // Move item between containers in local state
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== active.id) return item;
+        return {
+          ...item,
+          sprint_id: overContainer === 'sprint' && activeSprint ? activeSprint.id : null,
+        };
+      })
+    );
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || !projectId) return;
+
+    const activeContainer = findContainer(active.id as string);
+    let overContainer: 'sprint' | 'backlog';
+    if (over.id === 'sprint' || over.id === 'backlog') {
+      overContainer = over.id as 'sprint' | 'backlog';
+    } else {
+      overContainer = findContainer(over.id as string);
+    }
+
+    const containerItems =
+      activeContainer === 'sprint' ? sprintItems : backlogItems;
+
+    // Same container reorder
+    if (activeContainer === overContainer && active.id !== over.id) {
+      const oldIndex = containerItems.findIndex((i) => i.id === active.id);
+      const overIdx = containerItems.findIndex((i) => i.id === over.id);
+      if (oldIndex !== -1 && overIdx !== -1) {
+        const reordered = arrayMove(containerItems, oldIndex, overIdx);
+        setItems((prev) => {
+          const other = prev.filter(
+            (i) => !reordered.some((r) => r.id === i.id)
+          );
+          return [...other, ...reordered];
+        });
+        // Persist positions
+        const reorderPayload = reordered.map((item, idx) => ({
+          id: item.id,
+          position: idx,
+        }));
+        backlogApi.reorder(projectId, reorderPayload).catch(() => {
+          addToast('error', 'Failed to save order');
+        });
+        return;
+      }
+    }
+
+    // Cross-container move — already handled in handleDragOver for local state
+    // Now persist to backend
+    const movedItem = items.find((i) => i.id === active.id);
+    if (!movedItem) return;
+
+    const targetSprintId =
+      overContainer === 'sprint' && activeSprint ? activeSprint.id : '';
+
+    // Build reorder payload: the moved item with new sprint_id + position
+    const targetItems =
+      overContainer === 'sprint' ? sprintItems : backlogItems;
+    const reorderPayload = targetItems.map((item, idx) => ({
+      id: item.id,
+      position: idx,
+      ...(item.id === active.id ? { sprint_id: targetSprintId } : {}),
+    }));
+
+    // If item wasn't already in the target list (just moved), add it
+    if (!targetItems.some((i) => i.id === active.id)) {
+      reorderPayload.push({
+        id: active.id as string,
+        position: targetItems.length,
+        sprint_id: targetSprintId,
+      });
+    }
+
+    backlogApi.reorder(projectId, reorderPayload).catch(() => {
+      addToast('error', 'Failed to save order');
+    });
+  }
 
   // -----------------------------------------------------------------------
   // Panel helpers
@@ -332,7 +680,6 @@ export default function BacklogPage() {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     if (savedFadeRef.current) clearTimeout(savedFadeRef.current);
     setSaveStatus('saving');
-    setSaving(true);
 
     saveTimeoutRef.current = setTimeout(async () => {
       try {
@@ -354,11 +701,9 @@ export default function BacklogPage() {
         );
         setEditingItem(res.data);
         setSaveStatus('saved');
-        setSaving(false);
         savedFadeRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
       } catch {
         setSaveStatus('error');
-        setSaving(false);
       }
     }, 500);
   }, [
@@ -497,117 +842,6 @@ export default function BacklogPage() {
   }, []);
 
   // -----------------------------------------------------------------------
-  // Render: BacklogItemRow
-  // -----------------------------------------------------------------------
-
-  const renderItemRow = (item: BacklogItem) => {
-    const cfg = TYPE_CONFIG[item.type];
-    const TypeIcon = cfg.icon;
-
-    return (
-      <div
-        key={item.id}
-        onClick={() => openEditPanel(item)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '12px 16px',
-          backgroundColor: '#FAFBFC',
-          borderRadius: 10,
-          borderLeft: `4px solid ${cfg.color}`,
-          cursor: 'pointer',
-          transition: 'all 150ms ease',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = '#FFFFFF';
-          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = '#FAFBFC';
-          e.currentTarget.style.boxShadow = 'none';
-        }}
-      >
-        {/* Drag handle */}
-        <GripVertical
-          size={16}
-          color="#CBD5E1"
-          style={{ cursor: 'grab', flexShrink: 0 }}
-          onClick={(e) => e.stopPropagation()}
-        />
-
-        {/* Type icon */}
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            minWidth: 28,
-            borderRadius: 6,
-            backgroundColor: `${cfg.color}15`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <TypeIcon size={14} color={cfg.color} strokeWidth={2.5} />
-        </div>
-
-        {/* Title + labels */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 500,
-              color: '#0F172A',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {item.title}
-          </div>
-          {item.labels.length > 0 && (
-            <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-              {item.labels.map((label) => (
-                <Badge
-                  key={label}
-                  label={label}
-                  color={hashStringToColor(label)}
-                  style={{ fontSize: 10, padding: '1px 6px' }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Priority */}
-        <PriorityBadge priority={item.priority} />
-
-        {/* Points */}
-        <PointsBadge points={item.story_points} size={28} />
-
-        {/* Assignee */}
-        {item.assignee ? (
-          <Avatar name={item.assignee.full_name} size={28} />
-        ) : (
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              minWidth: 28,
-              borderRadius: '50%',
-              border: '1.5px dashed #CBD5E1',
-              backgroundColor: '#F8FAFC',
-            }}
-            title="Unassigned"
-          />
-        )}
-      </div>
-    );
-  };
-
-  // -----------------------------------------------------------------------
   // Render: Section
   // -----------------------------------------------------------------------
 
@@ -666,25 +900,36 @@ export default function BacklogPage() {
 
         {/* Section items */}
         {!collapsed && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {sectionItems.length === 0 ? (
-              <div
-                style={{
-                  padding: '24px 16px',
-                  textAlign: 'center',
-                  color: '#94A3B8',
-                  fontSize: 14,
-                  backgroundColor: '#FAFBFC',
-                  borderRadius: 10,
-                  border: '1px dashed #E2E8F0',
-                }}
-              >
-                No items {debouncedSearch || priorityFilter !== 'all' || typeFilter !== 'all' ? 'match filters' : 'yet'}
-              </div>
-            ) : (
-              sectionItems.map(renderItemRow)
-            )}
-          </div>
+          <SortableContext
+            items={sectionItems.map((i) => i.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <DroppableSection id={variant}>
+              {sectionItems.length === 0 ? (
+                <div
+                  style={{
+                    padding: '24px 16px',
+                    textAlign: 'center',
+                    color: '#94A3B8',
+                    fontSize: 14,
+                    backgroundColor: '#FAFBFC',
+                    borderRadius: 10,
+                    border: '1px dashed #E2E8F0',
+                  }}
+                >
+                  No items {debouncedSearch || priorityFilter !== 'all' || typeFilter !== 'all' ? 'match filters' : 'yet'}
+                </div>
+              ) : (
+                sectionItems.map((item) => (
+                  <SortableItemRow
+                    key={item.id}
+                    item={item}
+                    onOpen={openEditPanel}
+                  />
+                ))
+              )}
+            </DroppableSection>
+          </SortableContext>
         )}
       </div>
     );
@@ -1508,7 +1753,13 @@ export default function BacklogPage() {
           }}
         />
       ) : (
-        <>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
           {/* Sprint section — only show if there is an active sprint */}
           {activeSprint &&
             renderSection(
@@ -1529,7 +1780,11 @@ export default function BacklogPage() {
             () => setBacklogCollapsed((prev) => !prev),
             'backlog'
           )}
-        </>
+
+          <DragOverlay>
+            {activeItem ? <StaticItemRow item={activeItem} /> : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {/* ============================================================= */}

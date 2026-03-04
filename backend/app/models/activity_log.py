@@ -5,7 +5,6 @@ from sqlalchemy import String, DateTime, ForeignKey, Enum, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from sqlalchemy import Uuid
 
 
 class ActionType(str, enum.Enum):
@@ -25,16 +24,16 @@ class EntityType(str, enum.Enum):
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
-    id: Mapped[str] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    project_id = mapped_column(Uuid, ForeignKey("projects.id"), nullable=False)
-    user_id = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    project_id = mapped_column(String(36), ForeignKey("projects.id"), nullable=False)
+    user_id = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     action: Mapped[str] = mapped_column(
         Enum(ActionType, name="action_type_enum", native_enum=False), nullable=False
     )
     entity_type: Mapped[str] = mapped_column(
         Enum(EntityType, name="entity_type_enum", native_enum=False), nullable=False
     )
-    entity_id = mapped_column(Uuid, nullable=False)
+    entity_id = mapped_column(String(36), nullable=False)
     details = mapped_column(JSON, nullable=True)
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

@@ -2,13 +2,13 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_serializer
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
-    password: str
+    password: str = Field(min_length=8)
 
 
 class UserLogin(BaseModel):

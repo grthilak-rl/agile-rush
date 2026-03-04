@@ -152,8 +152,8 @@ def reorder_backlog_items(
         ).first()
         if item:
             item.position = reorder_item.position
-            if reorder_item.sprint_id is not None:
-                item.sprint_id = reorder_item.sprint_id
+            if "sprint_id" in reorder_item.model_fields_set:
+                item.sprint_id = reorder_item.sprint_id or None
 
     db.commit()
     return {"message": "Items reordered successfully"}
