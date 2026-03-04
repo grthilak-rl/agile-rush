@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -13,6 +13,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  Play,
 } from 'lucide-react';
 import {
   DndContext,
@@ -338,6 +339,7 @@ function DroppableSection({
 
 export default function BacklogPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const { addToast } = useToast();
 
   // Data
@@ -345,6 +347,7 @@ export default function BacklogPage() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [loading, setLoading] = useState(true);
+  const [startingSprint, setStartingSprint] = useState(false);
 
   // Filters
   const [searchInput, setSearchInput] = useState('');
@@ -422,6 +425,32 @@ export default function BacklogPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // -----------------------------------------------------------------------
+  // Start sprint
+  // -----------------------------------------------------------------------
+
+  const planningSprint = sprints.find((s) => s.status === 'planning');
+
+  const handleStartSprint = useCallback(async () => {
+    if (!projectId) return;
+    setStartingSprint(true);
+    try {
+      let sprint = planningSprint;
+      if (!sprint) {
+        const createRes = await sprintsApi.create(projectId);
+        sprint = createRes.data;
+      }
+      await sprintsApi.start(projectId, sprint.id);
+      addToast('success', `${sprint.name} started`);
+      await loadData();
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start sprint';
+      addToast('error', message);
+    } finally {
+      setStartingSprint(false);
+    }
+  }, [projectId, planningSprint, addToast, loadData]);
 
   // -----------------------------------------------------------------------
   // Search debounce
@@ -1770,6 +1799,48 @@ export default function BacklogPage() {
               () => setSprintCollapsed((prev) => !prev),
               'sprint'
             )}
+
+          {/* No active sprint banner */}
+          {!activeSprint && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                marginBottom: 16,
+                backgroundColor: '#F0F9FF',
+                border: '1px solid #BAE6FD',
+                borderRadius: 10,
+              }}
+            >
+              <div>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#0369A1' }}>
+                  No active sprint
+                </span>
+                <span style={{ fontSize: 13, color: '#0284C7', marginLeft: 8 }}>
+                  Start a sprint to move items from backlog to the board.
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => navigate(`/projects/${projectId}/sprints`)}
+                >
+                  Manage Sprints
+                </Button>
+                <Button
+                  size="sm"
+                  icon={<Play size={14} />}
+                  onClick={handleStartSprint}
+                  loading={startingSprint}
+                >
+                  {planningSprint ? 'Start Sprint' : 'Create & Start Sprint'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Backlog section */}
           {renderSection(

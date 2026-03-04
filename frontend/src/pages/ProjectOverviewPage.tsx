@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { projectsApi, sprintsApi, activityApi } from '../api/client';
+import { useToast } from '../components/ui/Toast';
 import type { Project, Sprint, ActivityLog, ProjectStats } from '../types';
 import { Card } from '../components/ui/Card';
 import { Badge, StatusBadge } from '../components/ui/Badge';
@@ -41,13 +42,16 @@ const projectTypeColors: Record<string, string> = {
 export default function ProjectOverviewPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [project, setProject] = useState<Project | null>(null);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creatingSprintAction, setCreatingSprintAction] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -58,12 +62,14 @@ export default function ProjectOverviewPage() {
     Promise.all([
       projectsApi.get(projectId),
       sprintsApi.active(projectId),
+      sprintsApi.list(projectId),
       projectsApi.stats(projectId),
       activityApi.list(projectId, { limit: 20 }),
     ])
-      .then(([projectRes, sprintRes, statsRes, activityRes]) => {
+      .then(([projectRes, sprintRes, sprintsRes, statsRes, activityRes]) => {
         setProject(projectRes.data);
         setActiveSprint(sprintRes.data);
+        setSprints(sprintsRes.data);
         setStats(statsRes.data);
         setActivities(activityRes.data);
       })
@@ -424,7 +430,9 @@ export default function ProjectOverviewPage() {
           />
           <h3 style={{ color: '#334155', marginBottom: 8 }}>No active sprint</h3>
           <p style={{ color: '#64748B', fontSize: 14, marginBottom: 16 }}>
-            Create a sprint to start tracking progress for this project.
+            {sprints.some((s) => s.status === 'planning')
+              ? 'You have a sprint ready to start.'
+              : 'Create a sprint to start tracking progress for this project.'}
           </p>
           <button
             style={{
@@ -438,13 +446,37 @@ export default function ProjectOverviewPage() {
               borderRadius: 10,
               fontSize: 14,
               fontWeight: 600,
-              cursor: 'pointer',
-              opacity: 0.6,
+              cursor: creatingSprintAction ? 'not-allowed' : 'pointer',
+              opacity: creatingSprintAction ? 0.6 : 1,
+              transition: 'all 150ms ease',
             }}
-            disabled
-            title="Coming soon"
+            disabled={creatingSprintAction}
+            onClick={async () => {
+              if (!projectId) return;
+              setCreatingSprintAction(true);
+              try {
+                const planningSprint = sprints.find((s) => s.status === 'planning');
+                if (planningSprint) {
+                  await sprintsApi.start(projectId, planningSprint.id);
+                  addToast('success', `${planningSprint.name} started`);
+                } else {
+                  const createRes = await sprintsApi.create(projectId);
+                  await sprintsApi.start(projectId, createRes.data.id);
+                  addToast('success', `${createRes.data.name} created and started`);
+                }
+                window.location.reload();
+              } catch {
+                addToast('error', 'Failed to start sprint');
+              } finally {
+                setCreatingSprintAction(false);
+              }
+            }}
           >
-            Create Sprint
+            {creatingSprintAction
+              ? 'Starting...'
+              : sprints.some((s) => s.status === 'planning')
+                ? 'Start Sprint'
+                : 'Create & Start Sprint'}
           </button>
         </Card>
       )}

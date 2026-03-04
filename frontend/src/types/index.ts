@@ -57,6 +57,7 @@ export interface Sprint {
   end_date: string | null;
   status: 'planning' | 'active' | 'completed';
   created_at: string;
+  updated_at: string;
 }
 
 export interface ActivityLog {

@@ -100,6 +100,14 @@ export const sprintsApi = {
     api.get<Sprint | null>(`/projects/${projectId}/sprints/active`),
   create: (projectId: string, data?: { name?: string; goal?: string; duration_weeks?: number }) =>
     api.post<Sprint>(`/projects/${projectId}/sprints`, data || {}),
+  get: (projectId: string, sprintId: string) =>
+    api.get<Sprint>(`/projects/${projectId}/sprints/${sprintId}`),
+  update: (projectId: string, sprintId: string, data: Partial<Sprint>) =>
+    api.patch<Sprint>(`/projects/${projectId}/sprints/${sprintId}`, data),
+  start: (projectId: string, sprintId: string) =>
+    api.post<Sprint>(`/projects/${projectId}/sprints/${sprintId}/start`),
+  complete: (projectId: string, sprintId: string, data: { action: string }) =>
+    api.post<Sprint>(`/projects/${projectId}/sprints/${sprintId}/complete`, data),
 };
 
 // Activity

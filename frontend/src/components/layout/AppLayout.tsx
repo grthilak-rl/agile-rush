@@ -24,7 +24,7 @@ export function AppLayout() {
             style={{
               maxWidth: 1400,
               margin: '0 auto',
-              animation: 'fadeInUp 200ms ease forwards',
+              animation: 'fadeIn 200ms ease forwards',
             }}
           >
             <OverlayContainerProvider containerRef={overlayRef}>

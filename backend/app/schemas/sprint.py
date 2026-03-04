@@ -11,6 +11,18 @@ class SprintCreate(BaseModel):
     duration_weeks: Optional[int] = None
 
 
+class SprintUpdate(BaseModel):
+    name: Optional[str] = None
+    goal: Optional[str] = None
+    duration_weeks: Optional[int] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+
+
+class SprintComplete(BaseModel):
+    action: str  # "move_to_backlog" or "move_to_next_sprint"
+
+
 class SprintResponse(BaseModel):
     id: UUID
     project_id: UUID
