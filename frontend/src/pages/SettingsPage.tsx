@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings, Trash2, Save } from 'lucide-react';
-import { projectsApi } from '../api/client';
+import { projectsApi, membersApi } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
+import { TeamPanel } from '../components/team/TeamPanel';
 import type { Project } from '../types';
 
 const inputStyle: React.CSSProperties = {
@@ -32,10 +34,12 @@ export default function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [userRole, setUserRole] = useState<string>('viewer');
 
   // Form state
   const [name, setName] = useState('');
@@ -64,7 +68,13 @@ export default function SettingsPage() {
       })
       .catch(() => addToast('error', 'Failed to load project settings'))
       .finally(() => setLoading(false));
-  }, [projectId, addToast]);
+
+    // Determine user role
+    membersApi.list(projectId).then((res) => {
+      const me = res.data.find((m) => m.user_id === user?.id);
+      if (me) setUserRole(me.role);
+    }).catch(() => {});
+  }, [projectId, addToast, user?.id]);
 
   const handleSave = async () => {
     if (!projectId || !name.trim()) {
@@ -236,6 +246,13 @@ export default function SettingsPage() {
           </div>
         </div>
       </Card>
+
+      {/* Team Members */}
+      {projectId && (
+        <div style={{ marginBottom: 24 }}>
+          <TeamPanel projectId={projectId} userRole={userRole} />
+        </div>
+      )}
 
       {/* Danger Zone */}
       <Card hoverLift={false} style={{ border: '1px solid #FECACA' }}>

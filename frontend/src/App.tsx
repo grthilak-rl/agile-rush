@@ -22,6 +22,7 @@ const RetroPage = lazy(() => import('./pages/RetroPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const MyTasksPage = lazy(() => import('./pages/MyTasksPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function CatchAllRedirect() {
@@ -71,6 +72,7 @@ export default function App() {
                 <Route path="/projects/:projectId/sprints/:sprintId/retro" element={<RetroPage />} />
                 <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
                 <Route path="/projects/:projectId/settings" element={<SettingsPage />} />
+                <Route path="/my-tasks" element={<MyTasksPage />} />
                 <Route path="/settings/profile" element={<ProfilePage />} />
               </Route>
 

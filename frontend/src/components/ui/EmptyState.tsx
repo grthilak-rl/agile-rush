@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Button } from './Button';
 
 interface EmptyStateProps {
-  icon?: string;
+  icon?: ReactNode;
   title: string;
   description: string;
   action?: {

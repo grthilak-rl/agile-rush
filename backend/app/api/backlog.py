@@ -6,10 +6,12 @@ from sqlalchemy import func
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.project_access import get_project_with_access
+from app.core.notifications import create_notification
 from app.models.user import User
-from app.models.project import Project
 from app.models.backlog_item import BacklogItem, ItemType, Priority, ItemStatus
 from app.models.activity_log import ActivityLog, ActionType, EntityType
+from app.models.notification import NotificationType
 from app.schemas.backlog_item import (
     BacklogItemCreate,
     BacklogItemUpdate,
@@ -19,16 +21,6 @@ from app.schemas.backlog_item import (
 from app.core.snapshots import maybe_snapshot_active_sprint
 
 router = APIRouter(prefix="/api/projects", tags=["backlog"])
-
-
-def verify_project_ownership(project_id: str, user: User, db: Session) -> Project:
-    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-    return project
 
 
 def create_activity(
@@ -62,7 +54,7 @@ def list_backlog_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     query = (
         db.query(BacklogItem)
@@ -92,7 +84,7 @@ def create_backlog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "member")
 
     max_position = db.query(func.coalesce(func.max(BacklogItem.position), 0)).filter(
         BacklogItem.project_id == project_id
@@ -125,7 +117,19 @@ def create_backlog_item(
         details={"title": item.title, "type": item.type},
     )
 
-    # Snapshot if item added to active sprint
+    # Notify assignee if assigned to someone else
+    if item.assignee_id and item.assignee_id != current_user.id:
+        create_notification(
+            db=db,
+            user_id=item.assignee_id,
+            type=NotificationType.item_assigned,
+            title="New Assignment",
+            message=f"{current_user.full_name} assigned you '{item.title}'",
+            project_id=project_id,
+            entity_type="backlog_item",
+            entity_id=item.id,
+        )
+
     if item.sprint_id:
         maybe_snapshot_active_sprint(db, project_id)
 
@@ -141,14 +145,14 @@ def create_backlog_item(
     return BacklogItemResponse.model_validate(loaded_item)
 
 
-@router.patch("/{project_id}/backlog/reorder", status_code=status.HTTP_200_OK)
+@router.patch("/{project_id}/backlog/reorder", status_code=200)
 def reorder_backlog_items(
     project_id: str,
     reorder_data: ReorderRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "member")
 
     for reorder_item in reorder_data.items:
         item = db.query(BacklogItem).filter(
@@ -171,7 +175,7 @@ def get_backlog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     item = (
         db.query(BacklogItem)
@@ -195,7 +199,7 @@ def update_backlog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "member")
 
     item = db.query(BacklogItem).filter(
         BacklogItem.id == item_id,
@@ -225,18 +229,43 @@ def update_backlog_item(
             entity_id=item.id,
             details={"title": item.title, "from_status": old_status, "to_status": update_dict["status"]},
         )
-    elif "assignee_id" in update_dict and update_dict["assignee_id"] != str(old_assignee) if old_assignee else True:
-        create_activity(
-            db=db,
-            project_id=project_id,
-            user_id=current_user.id,
-            action=ActionType.updated,
-            entity_type=EntityType.backlog_item,
-            entity_id=item.id,
-            details={"title": item.title, "field": "assignee"},
-        )
+        # Notify assignee of status change
+        if item.assignee_id and item.assignee_id != current_user.id:
+            create_notification(
+                db=db,
+                user_id=item.assignee_id,
+                type=NotificationType.item_status_changed,
+                title="Item Updated",
+                message=f"'{item.title}' moved to {update_dict['status']}",
+                project_id=project_id,
+                entity_type="backlog_item",
+                entity_id=item.id,
+            )
+    elif "assignee_id" in update_dict:
+        new_assignee = update_dict["assignee_id"]
+        if new_assignee != (str(old_assignee) if old_assignee else None):
+            create_activity(
+                db=db,
+                project_id=project_id,
+                user_id=current_user.id,
+                action=ActionType.updated,
+                entity_type=EntityType.backlog_item,
+                entity_id=item.id,
+                details={"title": item.title, "field": "assignee"},
+            )
+            # Notify new assignee
+            if new_assignee and new_assignee != current_user.id:
+                create_notification(
+                    db=db,
+                    user_id=new_assignee,
+                    type=NotificationType.item_assigned,
+                    title="New Assignment",
+                    message=f"{current_user.full_name} assigned you '{item.title}'",
+                    project_id=project_id,
+                    entity_type="backlog_item",
+                    entity_id=item.id,
+                )
 
-    # Snapshot on any status change, points change, or sprint assignment change
     needs_snapshot = (
         "status" in update_dict
         or "story_points" in update_dict
@@ -264,7 +293,7 @@ def delete_backlog_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "member")
 
     item = db.query(BacklogItem).filter(
         BacklogItem.id == item_id,
@@ -286,7 +315,6 @@ def delete_backlog_item(
         details={"title": item.title},
     )
 
-    # Snapshot if item was in active sprint
     if item.sprint_id:
         maybe_snapshot_active_sprint(db, project_id)
 

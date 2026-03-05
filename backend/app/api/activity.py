@@ -5,22 +5,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.project_access import get_project_with_access
 from app.models.user import User
-from app.models.project import Project
 from app.models.activity_log import ActivityLog
 from app.schemas.activity_log import ActivityLogResponse
 
 router = APIRouter(prefix="/api/projects", tags=["activity"])
-
-
-def verify_project_ownership(project_id: str, user: User, db: Session) -> Project:
-    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-    return project
 
 
 @router.get("/{project_id}/activity", response_model=List[ActivityLogResponse])
@@ -31,7 +21,7 @@ def list_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     activities = (
         db.query(ActivityLog)

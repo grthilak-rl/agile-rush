@@ -3,19 +3,22 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from pydantic import BaseModel
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.project_access import get_project_with_access
 from app.models.user import User
 from app.models.project import Project, ProjectType
+from app.models.project_member import ProjectMember, MemberStatus
 from app.models.backlog_item import BacklogItem, ItemStatus
 from app.models.sprint import Sprint, SprintStatus
 from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.models.retro_item import RetroItem
 from app.models.daily_snapshot import DailySnapshot
+from app.models.notification import Notification
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectStatsResponse
 
 
@@ -30,14 +33,29 @@ PRESET_COLORS = [
 ]
 
 
-def verify_project_ownership(project_id: str, user: User, db: Session) -> Project:
-    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-    return project
+def _project_response(project: Project, db: Session) -> ProjectResponse:
+    total_items = db.query(func.count(BacklogItem.id)).filter(
+        BacklogItem.project_id == project.id
+    ).scalar() or 0
+
+    completed_items = db.query(func.count(BacklogItem.id)).filter(
+        BacklogItem.project_id == project.id,
+        BacklogItem.status == ItemStatus.done,
+    ).scalar() or 0
+
+    active_sprint = db.query(Sprint).filter(
+        Sprint.project_id == project.id,
+        Sprint.status == SprintStatus.active,
+    ).first()
+
+    progress_percentage = (completed_items / total_items * 100) if total_items > 0 else 0.0
+
+    project_resp = ProjectResponse.model_validate(project)
+    project_resp.active_sprint_name = active_sprint.name if active_sprint else None
+    project_resp.total_items = total_items
+    project_resp.completed_items = completed_items
+    project_resp.progress_percentage = round(progress_percentage, 1)
+    return project_resp
 
 
 @router.get("/", response_model=List[ProjectResponse])
@@ -45,33 +63,20 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    projects = db.query(Project).filter(Project.owner_id == current_user.id).all()
-    result = []
-    for project in projects:
-        total_items = db.query(func.count(BacklogItem.id)).filter(
-            BacklogItem.project_id == project.id
-        ).scalar() or 0
+    # Projects user owns OR is an active member of
+    member_project_ids = db.query(ProjectMember.project_id).filter(
+        ProjectMember.user_id == current_user.id,
+        ProjectMember.status == MemberStatus.active,
+    ).subquery()
 
-        completed_items = db.query(func.count(BacklogItem.id)).filter(
-            BacklogItem.project_id == project.id,
-            BacklogItem.status == ItemStatus.done,
-        ).scalar() or 0
+    projects = db.query(Project).filter(
+        or_(
+            Project.owner_id == current_user.id,
+            Project.id.in_(member_project_ids),
+        )
+    ).all()
 
-        active_sprint = db.query(Sprint).filter(
-            Sprint.project_id == project.id,
-            Sprint.status == SprintStatus.active,
-        ).first()
-
-        progress_percentage = (completed_items / total_items * 100) if total_items > 0 else 0.0
-
-        project_data = ProjectResponse.model_validate(project)
-        project_data.active_sprint_name = active_sprint.name if active_sprint else None
-        project_data.total_items = total_items
-        project_data.completed_items = completed_items
-        project_data.progress_percentage = round(progress_percentage, 1)
-        result.append(project_data)
-
-    return result
+    return [_project_response(p, db) for p in projects]
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -111,30 +116,8 @@ def get_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
-
-    total_items = db.query(func.count(BacklogItem.id)).filter(
-        BacklogItem.project_id == project.id
-    ).scalar() or 0
-
-    completed_items = db.query(func.count(BacklogItem.id)).filter(
-        BacklogItem.project_id == project.id,
-        BacklogItem.status == ItemStatus.done,
-    ).scalar() or 0
-
-    active_sprint = db.query(Sprint).filter(
-        Sprint.project_id == project.id,
-        Sprint.status == SprintStatus.active,
-    ).first()
-
-    progress_percentage = (completed_items / total_items * 100) if total_items > 0 else 0.0
-
-    project_resp = ProjectResponse.model_validate(project)
-    project_resp.active_sprint_name = active_sprint.name if active_sprint else None
-    project_resp.total_items = total_items
-    project_resp.completed_items = completed_items
-    project_resp.progress_percentage = round(progress_percentage, 1)
-    return project_resp
+    project, _ = get_project_with_access(project_id, current_user, db, "viewer")
+    return _project_response(project, db)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
@@ -144,7 +127,7 @@ def update_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
 
     update_dict = update_data.model_dump(exclude_unset=True)
     for key, value in update_dict.items():
@@ -152,29 +135,7 @@ def update_project(
 
     db.commit()
     db.refresh(project)
-
-    total_items = db.query(func.count(BacklogItem.id)).filter(
-        BacklogItem.project_id == project.id
-    ).scalar() or 0
-
-    completed_items = db.query(func.count(BacklogItem.id)).filter(
-        BacklogItem.project_id == project.id,
-        BacklogItem.status == ItemStatus.done,
-    ).scalar() or 0
-
-    active_sprint = db.query(Sprint).filter(
-        Sprint.project_id == project.id,
-        Sprint.status == SprintStatus.active,
-    ).first()
-
-    progress_percentage = (completed_items / total_items * 100) if total_items > 0 else 0.0
-
-    project_resp = ProjectResponse.model_validate(project)
-    project_resp.active_sprint_name = active_sprint.name if active_sprint else None
-    project_resp.total_items = total_items
-    project_resp.completed_items = completed_items
-    project_resp.progress_percentage = round(progress_percentage, 1)
-    return project_resp
+    return _project_response(project, db)
 
 
 @router.patch("/{project_id}/settings", response_model=ProjectResponse)
@@ -184,7 +145,7 @@ def update_project_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
 
     update_dict = update_data.model_dump(exclude_unset=True)
 
@@ -197,7 +158,6 @@ def update_project_settings(
     for key, value in update_dict.items():
         setattr(project, key, value)
 
-    # Activity log
     log = ActivityLog(
         project_id=project.id,
         user_id=current_user.id,
@@ -210,26 +170,7 @@ def update_project_settings(
 
     db.commit()
     db.refresh(project)
-
-    total_items = db.query(func.count(BacklogItem.id)).filter(
-        BacklogItem.project_id == project.id
-    ).scalar() or 0
-    completed_items = db.query(func.count(BacklogItem.id)).filter(
-        BacklogItem.project_id == project.id,
-        BacklogItem.status == ItemStatus.done,
-    ).scalar() or 0
-    active_sprint = db.query(Sprint).filter(
-        Sprint.project_id == project.id,
-        Sprint.status == SprintStatus.active,
-    ).first()
-    progress_percentage = (completed_items / total_items * 100) if total_items > 0 else 0.0
-
-    project_resp = ProjectResponse.model_validate(project)
-    project_resp.active_sprint_name = active_sprint.name if active_sprint else None
-    project_resp.total_items = total_items
-    project_resp.completed_items = completed_items
-    project_resp.progress_percentage = round(progress_percentage, 1)
-    return project_resp
+    return _project_response(project, db)
 
 
 @router.delete("/{project_id}")
@@ -239,7 +180,7 @@ def delete_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "owner")
 
     if confirm and confirm.confirm_name != project.name:
         raise HTTPException(
@@ -253,6 +194,8 @@ def delete_project(
             db.query(Sprint.id).filter(Sprint.project_id == project.id)
         )
     ).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.project_id == project.id).delete()
+    db.query(ProjectMember).filter(ProjectMember.project_id == project.id).delete()
     db.query(RetroItem).filter(RetroItem.project_id == project.id).delete()
     db.query(ActivityLog).filter(ActivityLog.project_id == project.id).delete()
     db.query(BacklogItem).filter(BacklogItem.project_id == project.id).delete()
@@ -268,7 +211,7 @@ def get_project_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "viewer")
 
     total_items = db.query(func.count(BacklogItem.id)).filter(
         BacklogItem.project_id == project.id

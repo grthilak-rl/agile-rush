@@ -13,12 +13,14 @@ import {
   Zap,
   Menu,
   X,
+  CheckSquare,
 } from 'lucide-react';
 import { projectsApi } from '../../api/client';
 import type { Project } from '../../types';
 
 const dashboardNav = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+  { icon: CheckSquare, label: 'My Tasks', path: '/my-tasks' },
 ];
 
 const projectNav = [
@@ -60,7 +62,7 @@ export function Sidebar() {
 
   const isActive = (path: string) => {
     if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
-    if (path === '/tasks') return location.pathname === '/tasks';
+    if (path === '/my-tasks') return location.pathname === '/my-tasks';
     if (isProjectContext && projectId) {
       const fullPath = `/projects/${projectId}${path}`;
       if (path === '') return location.pathname === `/projects/${projectId}`;

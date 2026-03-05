@@ -8,12 +8,15 @@ from sqlalchemy import func
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.project_access import get_project_with_access
+from app.core.notifications import notify_project_members
 from app.models.user import User
 from app.models.project import Project
 from app.models.sprint import Sprint, SprintStatus
 from app.models.backlog_item import BacklogItem, ItemStatus
 from app.models.retro_item import RetroItem
 from app.models.activity_log import ActivityLog, ActionType, EntityType
+from app.models.notification import NotificationType
 from app.schemas.sprint import SprintCreate, SprintUpdate, SprintComplete, SprintResponse
 from app.schemas.backlog_item import BacklogItemResponse
 from app.core.snapshots import create_daily_snapshot
@@ -24,16 +27,6 @@ class BulkMoveRequest(BaseModel):
     sprint_id: Optional[str] = None
 
 router = APIRouter(prefix="/api/projects", tags=["sprints"])
-
-
-def verify_project_ownership(project_id: str, user: User, db: Session) -> Project:
-    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-    return project
 
 
 def create_activity(
@@ -62,7 +55,7 @@ def list_sprints(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprints = (
         db.query(Sprint)
@@ -79,7 +72,7 @@ def get_active_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = (
         db.query(Sprint)
@@ -98,7 +91,7 @@ def create_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
 
     max_sprint_number = db.query(func.coalesce(func.max(Sprint.sprint_number), 0)).filter(
         Sprint.project_id == project_id
@@ -130,7 +123,7 @@ def get_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -152,7 +145,7 @@ def update_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "admin")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -178,16 +171,6 @@ def update_sprint(
         details={"name": sprint.name},
     )
 
-    create_activity(
-        db=db,
-        project_id=project_id,
-        user_id=current_user.id,
-        action=ActionType.created,
-        entity_type=EntityType.sprint,
-        entity_id=sprint.id,
-        details={"name": sprint.name},
-    )
-
     db.commit()
     db.refresh(sprint)
     return SprintResponse.model_validate(sprint)
@@ -200,7 +183,7 @@ def start_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -241,7 +224,18 @@ def start_sprint(
         details={"name": sprint.name, "action": "started"},
     )
 
-    # Create initial snapshot
+    # Notify all project members
+    notify_project_members(
+        db=db,
+        project_id=project_id,
+        type=NotificationType.sprint_started,
+        title="Sprint Started",
+        message=f"{sprint.name} has started in {project.name}",
+        exclude_user_id=current_user.id,
+        entity_type="sprint",
+        entity_id=sprint.id,
+    )
+
     create_daily_snapshot(db, sprint.id)
 
     db.commit()
@@ -257,7 +251,7 @@ def complete_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -323,7 +317,18 @@ def complete_sprint(
         },
     )
 
-    # Final snapshot on completion
+    # Notify all project members
+    notify_project_members(
+        db=db,
+        project_id=project_id,
+        type=NotificationType.sprint_completed,
+        title="Sprint Completed",
+        message=f"{sprint.name} completed in {project.name}",
+        exclude_user_id=current_user.id,
+        entity_type="sprint",
+        entity_id=sprint.id,
+    )
+
     create_daily_snapshot(db, sprint.id)
 
     db.commit()
@@ -338,7 +343,7 @@ def delete_sprint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "admin")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -383,7 +388,7 @@ def get_unassigned_backlog(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     items = (
         db.query(BacklogItem)
@@ -405,7 +410,7 @@ def get_sprint_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -431,7 +436,7 @@ def get_sprint_capacity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -494,7 +499,7 @@ def bulk_move_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "member")
 
     if data.sprint_id:
         sprint = db.query(Sprint).filter(
@@ -544,7 +549,7 @@ def get_sprint_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,

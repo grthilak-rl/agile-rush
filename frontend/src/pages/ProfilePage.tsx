@@ -6,6 +6,7 @@ import { useToast } from '../components/ui/Toast';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
+import { ApiKeysPanel } from '../components/settings/ApiKeysPanel';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -149,6 +150,11 @@ export default function ProfilePage() {
           </Button>
         </div>
       </Card>
+
+      {/* API Keys */}
+      <div style={{ marginBottom: 24 }}>
+        <ApiKeysPanel />
+      </div>
 
       {/* Change Password */}
       <Card hoverLift={false}>

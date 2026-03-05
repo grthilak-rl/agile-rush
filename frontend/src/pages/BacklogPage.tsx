@@ -32,9 +32,9 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { backlogApi, sprintsApi } from '../api/client';
+import { backlogApi, sprintsApi, membersApi } from '../api/client';
 import { useToast } from '../components/ui/Toast';
-import type { BacklogItem, Sprint, AcceptanceCriteria } from '../types';
+import type { BacklogItem, Sprint, AcceptanceCriteria, ProjectMember } from '../types';
 import { Button } from '../components/ui/Button';
 import { Badge, PriorityBadge } from '../components/ui/Badge';
 import { PointsBadge } from '../components/ui/PointsBadge';
@@ -377,6 +377,10 @@ export default function BacklogPage() {
   const [formLabels, setFormLabels] = useState<string[]>([]);
   const [formLabelInput, setFormLabelInput] = useState('');
   const [formCriteria, setFormCriteria] = useState<AcceptanceCriteria[]>([]);
+  const [formAssigneeId, setFormAssigneeId] = useState<string | null>(null);
+
+  // Team members for assignee dropdown
+  const [members, setMembers] = useState<ProjectMember[]>([]);
 
   // Auto-save
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -407,16 +411,25 @@ export default function BacklogPage() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [itemsRes, sprintsRes, activeRes] = await Promise.all([
+      const [itemsRes, sprintsRes, activeRes, membersRes] = await Promise.all([
         backlogApi.list(projectId),
         sprintsApi.list(projectId),
         sprintsApi.active(projectId),
+        membersApi.list(projectId),
       ]);
       setItems(itemsRes.data);
       setSprints(sprintsRes.data);
       setActiveSprint(activeRes.data);
-    } catch {
-      addToast('error', 'Failed to load backlog data');
+      setMembers(membersRes.data);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        addToast('error', 'You don\'t have access to this project');
+      } else if (status === 404) {
+        addToast('error', 'Project not found');
+      } else {
+        addToast('error', 'Failed to load backlog data');
+      }
     } finally {
       setLoading(false);
     }
@@ -638,6 +651,7 @@ export default function BacklogPage() {
     setFormLabels([]);
     setFormLabelInput('');
     setFormCriteria([]);
+    setFormAssigneeId(null);
     setSaveStatus('idle');
   }, []);
 
@@ -651,6 +665,7 @@ export default function BacklogPage() {
     const description = item.description || '';
     const labels = [...item.labels];
     const criteria = item.acceptance_criteria.map((c) => ({ ...c }));
+    const assigneeId = item.assignee_id || null;
 
     setFormTitle(title);
     setFormType(type);
@@ -663,13 +678,14 @@ export default function BacklogPage() {
     setFormLabels(labels);
     setFormLabelInput('');
     setFormCriteria(criteria);
+    setFormAssigneeId(assigneeId);
     setSaveStatus('idle');
 
     // Pre-set the snapshot so the effect won't treat initial population as a change
     lastSavedRef.current = JSON.stringify({
       formTitle: title, formType: type, formPriority: priority, formStatus: status,
       formPoints: points, formSprintId: sprintId, formDescription: description,
-      formLabels: labels, formCriteria: criteria,
+      formLabels: labels, formCriteria: criteria, formAssigneeId: assigneeId,
     });
   }, []);
 
@@ -722,6 +738,7 @@ export default function BacklogPage() {
           description: formDescription || null,
           labels: formLabels,
           acceptance_criteria: formCriteria,
+          assignee_id: formAssigneeId,
         };
         const res = await backlogApi.update(projectId, editingItem.id, payload);
         // Update item in the list
@@ -748,6 +765,7 @@ export default function BacklogPage() {
     formDescription,
     formLabels,
     formCriteria,
+    formAssigneeId,
   ]);
 
   // Trigger auto-save when form fields change (edit mode only)
@@ -755,7 +773,7 @@ export default function BacklogPage() {
     if (panelMode !== 'edit' || !editingItem) return;
     const snapshot = JSON.stringify({
       formTitle, formType, formPriority, formStatus,
-      formPoints, formSprintId, formDescription, formLabels, formCriteria,
+      formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
     });
     if (snapshot === lastSavedRef.current) return;
     lastSavedRef.current = snapshot;
@@ -771,6 +789,7 @@ export default function BacklogPage() {
     formDescription,
     formLabels,
     formCriteria,
+    formAssigneeId,
   ]);
 
   // -----------------------------------------------------------------------
@@ -791,6 +810,7 @@ export default function BacklogPage() {
         description: formDescription || null,
         labels: formLabels,
         acceptance_criteria: formCriteria,
+        assignee_id: formAssigneeId,
       };
       const res = await backlogApi.create(projectId, payload);
       setItems((prev) => [...prev, res.data]);
@@ -812,6 +832,7 @@ export default function BacklogPage() {
     formDescription,
     formLabels,
     formCriteria,
+    formAssigneeId,
     addToast,
     closePanel,
   ]);
@@ -1211,6 +1232,37 @@ export default function BacklogPage() {
                     {s.name}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Assignee */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label
+                style={{
+                  width: 100,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: '#64748B',
+                  flexShrink: 0,
+                }}
+              >
+                Assignee
+              </label>
+              <select
+                value={formAssigneeId || ''}
+                onChange={(e) =>
+                  setFormAssigneeId(e.target.value || null)
+                }
+                style={fieldStyle}
+              >
+                <option value="">Unassigned</option>
+                {members
+                  .filter((m) => m.status === 'active' && m.user)
+                  .map((m) => (
+                    <option key={m.user.id} value={m.user.id}>
+                      {m.user.full_name}
+                    </option>
+                  ))}
               </select>
             </div>
 

@@ -74,8 +74,14 @@ export default function ProjectOverviewPage() {
         setActivities(activityRes.data);
       })
       .catch((err) => {
-        console.error('Failed to load project data:', err);
-        setError('Failed to load project data. Please try again.');
+        const status = err?.response?.status;
+        if (status === 403) {
+          setError('You don\'t have access to this project.');
+        } else if (status === 404) {
+          setError('Project not found.');
+        } else {
+          setError('Failed to load project data. Please try again.');
+        }
       })
       .finally(() => {
         setLoading(false);

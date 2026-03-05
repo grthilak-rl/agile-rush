@@ -190,6 +190,97 @@ export interface SprintCapacity {
   capacity_status: 'under' | 'at' | 'over';
 }
 
+export interface ProjectMember {
+  id: string;
+  project_id: string;
+  user_id: string;
+  user: User;
+  role: 'owner' | 'admin' | 'member' | 'viewer';
+  status: 'pending' | 'active' | 'removed';
+  invited_by: string | null;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  project_id: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  created_at: string;
+}
+
+export interface NotificationCount {
+  unread: number;
+  total: number;
+}
+
+export interface SearchResults {
+  query: string;
+  results: {
+    projects: {
+      id: string;
+      name: string;
+      match: string;
+      snippet: string;
+    }[];
+    backlog_items: {
+      id: string;
+      title: string;
+      project_id: string;
+      project_name: string;
+      status: string;
+      type: string;
+      priority: string;
+      story_points: number | null;
+    }[];
+    sprints: {
+      id: string;
+      name: string;
+      project_id: string;
+      project_name: string;
+      status: string;
+    }[];
+  };
+  total: number;
+}
+
+export interface MyTaskItem {
+  id: string;
+  title: string;
+  type: string;
+  priority: string;
+  status: string;
+  story_points: number | null;
+  sprint_name: string | null;
+  project_id: string;
+  project_name: string;
+  project_color: string;
+  updated_at: string | null;
+}
+
+export interface MyTasksResponse {
+  items: MyTaskItem[];
+  summary: {
+    total: number;
+    by_status: Record<string, number>;
+    total_points: number;
+  };
+}
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  key?: string;
+  key_prefix: string;
+  last_used_at: string | null;
+  created_at: string | null;
+}
+
 export interface SprintSummary {
   sprint: {
     id: string;

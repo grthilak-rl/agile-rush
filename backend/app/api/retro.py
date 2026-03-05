@@ -6,6 +6,7 @@ from sqlalchemy import func
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.project_access import get_project_with_access
 from app.models.user import User
 from app.models.project import Project
 from app.models.sprint import Sprint, SprintStatus
@@ -21,13 +22,6 @@ from app.schemas.retro_item import (
 
 
 router = APIRouter(prefix="/api/projects", tags=["retro"])
-
-
-def verify_project_ownership(project_id: str, user: User, db: Session) -> Project:
-    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return project
 
 
 def create_activity(
@@ -83,7 +77,7 @@ def get_retro(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -170,7 +164,8 @@ def create_retro_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    # Viewers can add retro items per spec
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     sprint = db.query(Sprint).filter(
         Sprint.id == sprint_id,
@@ -225,7 +220,7 @@ def update_retro_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, role = get_project_with_access(project_id, current_user, db, "viewer")
 
     item = (
         db.query(RetroItem)
@@ -236,8 +231,8 @@ def update_retro_item(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Retro item not found")
 
-    # Only creator or project owner can edit
-    if item.created_by != current_user.id and project.owner_id != current_user.id:
+    # Only creator or owner/admin can edit
+    if item.created_by != current_user.id and role not in ("owner", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to edit this item")
 
     update_dict = data.model_dump(exclude_unset=True)
@@ -268,7 +263,7 @@ def delete_retro_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = verify_project_ownership(project_id, current_user, db)
+    project, role = get_project_with_access(project_id, current_user, db, "viewer")
 
     item = db.query(RetroItem).filter(
         RetroItem.id == retro_id,
@@ -277,7 +272,7 @@ def delete_retro_item(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Retro item not found")
 
-    if item.created_by != current_user.id and project.owner_id != current_user.id:
+    if item.created_by != current_user.id and role not in ("owner", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this item")
 
     db.delete(item)
@@ -293,7 +288,8 @@ def vote_retro_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    verify_project_ownership(project_id, current_user, db)
+    # Viewers can vote per spec
+    get_project_with_access(project_id, current_user, db, "viewer")
 
     item = (
         db.query(RetroItem)

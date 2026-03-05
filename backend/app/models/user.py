@@ -23,3 +23,6 @@ class User(Base):
     assigned_items = relationship("BacklogItem", back_populates="assignee", foreign_keys="BacklogItem.assignee_id")
     activity_logs = relationship("ActivityLog", back_populates="user")
     retro_items = relationship("RetroItem", back_populates="creator")
+    memberships = relationship("ProjectMember", back_populates="user", foreign_keys="ProjectMember.user_id")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")

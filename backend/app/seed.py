@@ -15,6 +15,9 @@ from app.models.backlog_item import BacklogItem, ItemType, Priority, ItemStatus
 from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.models.retro_item import RetroItem, RetroColumn
 from app.models.daily_snapshot import DailySnapshot
+from app.models.project_member import ProjectMember, MemberRole, MemberStatus
+from app.models.notification import Notification, NotificationType
+from app.models.api_key import ApiKey
 
 
 def seed():
@@ -35,6 +38,23 @@ def seed():
             hashed_password=hash_password("password123"),
         )
         db.add(user)
+        db.flush()
+
+        # ---- Additional Users ----
+        print("Creating additional users...")
+        alice = User(
+            id=str(uuid4()),
+            email="alice@agilerush.com",
+            full_name="Alice Johnson",
+            hashed_password=hash_password("password123"),
+        )
+        bob = User(
+            id=str(uuid4()),
+            email="bob@agilerush.com",
+            full_name="Bob Martinez",
+            hashed_password=hash_password("password123"),
+        )
+        db.add_all([alice, bob])
         db.flush()
 
         # ---- Projects ----
@@ -60,6 +80,28 @@ def seed():
             color="#10B981",
         )
         db.add_all([project1, project2])
+        db.flush()
+
+        # ---- Project Members ----
+        print("Creating project members...")
+        members = [
+            ProjectMember(
+                id=str(uuid4()), project_id=project1.id, user_id=alice.id,
+                role=MemberRole.admin, status=MemberStatus.active,
+                invited_by=user.id,
+            ),
+            ProjectMember(
+                id=str(uuid4()), project_id=project1.id, user_id=bob.id,
+                role=MemberRole.member, status=MemberStatus.active,
+                invited_by=user.id,
+            ),
+            ProjectMember(
+                id=str(uuid4()), project_id=project2.id, user_id=alice.id,
+                role=MemberRole.member, status=MemberStatus.active,
+                invited_by=user.id,
+            ),
+        ]
+        db.add_all(members)
         db.flush()
 
         # ---- Sprints ----
@@ -410,15 +452,109 @@ def seed():
                 created_at=now - timedelta(hours=3)),
         ]
         db.add_all(activities)
+        db.flush()
+
+        # ---- Assign some items to Alice and Bob ----
+        print("Assigning items to team members...")
+        # Assign Dashboard analytics to Alice
+        items_p1[1].assignee_id = alice.id
+        # Assign Multi-tenant data isolation to Bob
+        items_p1[4].assignee_id = bob.id
+        # Assign Patient portal accessibility audit to Alice
+        items_p2[5].assignee_id = alice.id
+        db.flush()
+
+        # ---- Notifications ----
+        print("Creating sample notifications...")
+        import hashlib
+        notifications = [
+            Notification(
+                id=str(uuid4()), user_id=user.id,
+                type=NotificationType.item_assigned.value,
+                title="Item Assigned",
+                message=f"You were assigned to 'User authentication with OAuth 2.0'",
+                project_id=project1.id,
+                entity_type="backlog_item", entity_id=items_p1[0].id,
+                is_read=True,
+                created_at=now - timedelta(days=3),
+            ),
+            Notification(
+                id=str(uuid4()), user_id=user.id,
+                type=NotificationType.sprint_started.value,
+                title="Sprint Started",
+                message=f"Sprint 14 has started",
+                project_id=project1.id,
+                entity_type="sprint", entity_id=sprint1.id,
+                is_read=True,
+                created_at=now - timedelta(days=5),
+            ),
+            Notification(
+                id=str(uuid4()), user_id=user.id,
+                type=NotificationType.item_status_changed.value,
+                title="Status Changed",
+                message=f"'Fix memory leak in WebSocket connection' moved to In Review",
+                project_id=project1.id,
+                entity_type="backlog_item", entity_id=items_p1[2].id,
+                is_read=False,
+                created_at=now - timedelta(hours=6),
+            ),
+            Notification(
+                id=str(uuid4()), user_id=alice.id,
+                type=NotificationType.invitation.value,
+                title="Project Invitation",
+                message=f"You were invited to join Phoenix Platform",
+                project_id=project1.id,
+                is_read=True,
+                created_at=now - timedelta(days=10),
+            ),
+            Notification(
+                id=str(uuid4()), user_id=alice.id,
+                type=NotificationType.item_assigned.value,
+                title="Item Assigned",
+                message=f"You were assigned to 'Dashboard analytics widgets'",
+                project_id=project1.id,
+                entity_type="backlog_item", entity_id=items_p1[1].id,
+                is_read=False,
+                created_at=now - timedelta(hours=2),
+            ),
+            Notification(
+                id=str(uuid4()), user_id=bob.id,
+                type=NotificationType.invitation.value,
+                title="Project Invitation",
+                message=f"You were invited to join Phoenix Platform",
+                project_id=project1.id,
+                is_read=True,
+                created_at=now - timedelta(days=8),
+            ),
+        ]
+        db.add_all(notifications)
+        db.flush()
+
+        # ---- API Key ----
+        print("Creating test API key...")
+        test_key = "ar_live_testkey1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+        api_key = ApiKey(
+            id=str(uuid4()),
+            user_id=user.id,
+            key_hash=hashlib.sha256(test_key.encode()).hexdigest(),
+            key_prefix=test_key[:14],
+            name="Development Key",
+        )
+        db.add(api_key)
 
         db.commit()
+        print()
         print("Seed data created successfully!")
-        print(f"  User: {user.email} (password: password123)")
+        print("Seed data created successfully!")
+        print(f"  Users: {user.email}, {alice.email}, {bob.email} (password: password123)")
         print(f"  Projects: {project1.name}, {project2.name}")
         total_items = len(items_s12) + len(items_s13) + len(items_p1) + len(items_s7) + len(items_p2)
         print(f"  Backlog items: {total_items}")
         print(f"  Sprints: S12, S13 (completed), S14 (active), S15 (planning), S7 (completed), S8 (planning)")
         print(f"  Daily snapshots: created for S12, S13, S14, S7")
+        print(f"  Team members: Alice (admin on P1, member on P2), Bob (member on P1)")
+        print(f"  Notifications: {len(notifications)} sample notifications")
+        print(f"  API Key: {test_key}")
 
     except Exception as e:
         db.rollback()

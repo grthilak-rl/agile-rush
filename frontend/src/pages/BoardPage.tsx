@@ -27,10 +27,10 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { createPortal } from 'react-dom';
-import { backlogApi, sprintsApi } from '../api/client';
+import { backlogApi, sprintsApi, membersApi } from '../api/client';
 import { useToast } from '../components/ui/Toast';
 import { useOverlayContainer } from '../contexts/OverlayContainerContext';
-import type { BacklogItem, Sprint, AcceptanceCriteria } from '../types';
+import type { BacklogItem, Sprint, AcceptanceCriteria, ProjectMember } from '../types';
 import { Button } from '../components/ui/Button';
 import { Badge, StatusBadge } from '../components/ui/Badge';
 import { PointsBadge } from '../components/ui/PointsBadge';
@@ -547,6 +547,10 @@ export default function BoardPage() {
   const [formLabels, setFormLabels] = useState<string[]>([]);
   const [formLabelInput, setFormLabelInput] = useState('');
   const [formCriteria, setFormCriteria] = useState<AcceptanceCriteria[]>([]);
+  const [formAssigneeId, setFormAssigneeId] = useState<string | null>(null);
+
+  // Team members for assignee dropdown
+  const [members, setMembers] = useState<ProjectMember[]>([]);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -576,20 +580,29 @@ export default function BoardPage() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [activeRes, sprintsRes] = await Promise.all([
+      const [activeRes, sprintsRes, membersRes] = await Promise.all([
         sprintsApi.active(projectId),
         sprintsApi.list(projectId),
+        membersApi.list(projectId),
       ]);
       setActiveSprint(activeRes.data);
       setSprints(sprintsRes.data);
+      setMembers(membersRes.data);
       if (activeRes.data) {
         const itemsRes = await backlogApi.list(projectId, { sprint_id: activeRes.data.id });
         setItems(itemsRes.data);
       } else {
         setItems([]);
       }
-    } catch {
-      addToast('error', 'Failed to load board data');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        addToast('error', 'You don\'t have access to this project');
+      } else if (status === 404) {
+        addToast('error', 'Project not found');
+      } else {
+        addToast('error', 'Failed to load board data');
+      }
     } finally {
       setLoading(false);
     }
@@ -739,6 +752,7 @@ export default function BoardPage() {
         ? item.acceptance_criteria.map((c) => ({ ...c }))
         : []
     );
+    setFormAssigneeId(item.assignee_id || null);
     setSaveStatus('idle');
 
     lastSavedRef.current = JSON.stringify({
@@ -746,6 +760,7 @@ export default function BoardPage() {
       formStatus: item.status, formPoints: item.story_points, formSprintId: item.sprint_id,
       formDescription: item.description || '', formLabels: [...item.labels],
       formCriteria: item.acceptance_criteria ? item.acceptance_criteria.map((c) => ({ ...c })) : [],
+      formAssigneeId: item.assignee_id || null,
     });
   }, []);
 
@@ -788,6 +803,7 @@ export default function BoardPage() {
           description: formDescription || null,
           labels: formLabels,
           acceptance_criteria: formCriteria,
+          assignee_id: formAssigneeId,
         };
         const res = await backlogApi.update(projectId, editingItem.id, payload);
         setItems((prev) =>
@@ -803,14 +819,14 @@ export default function BoardPage() {
   }, [
     editingItem, projectId,
     formTitle, formType, formPriority, formStatus,
-    formPoints, formSprintId, formDescription, formLabels, formCriteria,
+    formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
   ]);
 
   useEffect(() => {
     if (!editingItem) return;
     const snapshot = JSON.stringify({
       formTitle, formType, formPriority, formStatus,
-      formPoints, formSprintId, formDescription, formLabels, formCriteria,
+      formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
     });
     if (snapshot === lastSavedRef.current) return;
     lastSavedRef.current = snapshot;
@@ -818,7 +834,7 @@ export default function BoardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     formTitle, formType, formPriority, formStatus,
-    formPoints, formSprintId, formDescription, formLabels, formCriteria,
+    formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
   ]);
 
   // -------------------------------------------------------------------------
@@ -1024,6 +1040,19 @@ export default function BoardPage() {
                 {sprints.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Assignee */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{ width: 100, fontSize: 13, fontWeight: 500, color: '#64748B', flexShrink: 0 }}>Assignee</label>
+              <select value={formAssigneeId || ''} onChange={(e) => setFormAssigneeId(e.target.value || null)} style={fieldStyle}>
+                <option value="">Unassigned</option>
+                {members
+                  .filter((m) => m.status === 'active' && m.user)
+                  .map((m) => (
+                    <option key={m.user.id} value={m.user.id}>{m.user.full_name}</option>
+                  ))}
               </select>
             </div>
 

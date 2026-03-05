@@ -14,6 +14,12 @@ import type {
   BurndownData,
   VelocityData,
   ReportSummary,
+  ProjectMember,
+  Notification,
+  NotificationCount,
+  SearchResults,
+  MyTasksResponse,
+  ApiKeyItem,
 } from '../types';
 
 // In dev, Vite proxy forwards /api → http://localhost:8000
@@ -176,6 +182,51 @@ export const usersApi = {
     api.patch<User>('/users/me', data),
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.patch('/users/me/password', data),
+};
+
+// Members
+export const membersApi = {
+  list: (projectId: string) =>
+    api.get<ProjectMember[]>(`/projects/${projectId}/members`),
+  invite: (projectId: string, data: { email: string; role?: string }) =>
+    api.post(`/projects/${projectId}/members/invite`, data),
+  accept: (projectId: string) =>
+    api.post(`/projects/${projectId}/members/accept`),
+  updateRole: (projectId: string, memberId: string, data: { role: string }) =>
+    api.patch(`/projects/${projectId}/members/${memberId}`, data),
+  remove: (projectId: string, memberId: string) =>
+    api.delete(`/projects/${projectId}/members/${memberId}`),
+  transferOwnership: (projectId: string, data: { new_owner_id: string }) =>
+    api.post(`/projects/${projectId}/members/transfer-ownership`, data),
+};
+
+// Notifications
+export const notificationsApi = {
+  list: (params?: { unread_only?: boolean; limit?: number; offset?: number }) =>
+    api.get<Notification[]>('/notifications', { params }),
+  count: () => api.get<NotificationCount>('/notifications/count'),
+  markRead: (id: string) => api.patch(`/notifications/${id}/read`),
+  markAllRead: () => api.post('/notifications/read-all'),
+  delete: (id: string) => api.delete(`/notifications/${id}`),
+};
+
+// Search
+export const searchApi = {
+  search: (q: string, projectId?: string) =>
+    api.get<SearchResults>('/search', { params: { q, project_id: projectId } }),
+};
+
+// Tasks
+export const tasksApi = {
+  myTasks: (params?: { status?: string; project_id?: string; sort?: string }) =>
+    api.get<MyTasksResponse>('/tasks/me', { params }),
+};
+
+// API Keys
+export const apiKeysApi = {
+  list: () => api.get<ApiKeyItem[]>('/settings/api-keys'),
+  create: (data: { name: string }) => api.post<ApiKeyItem>('/settings/api-keys', data),
+  revoke: (id: string) => api.delete(`/settings/api-keys/${id}`),
 };
 
 export default api;
