@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 
 // Lazy load pages
@@ -20,10 +21,15 @@ const SprintSummaryPage = lazy(() => import('./pages/SprintSummaryPage'));
 const RetroPage = lazy(() => import('./pages/RetroPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function CatchAllRedirect() {
   const token = localStorage.getItem('token');
-  return <Navigate to={token ? '/dashboard' : '/'} replace />;
+  if (token) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Navigate to="/" replace />;
 }
 
 function PageLoader() {
@@ -36,6 +42,7 @@ function PageLoader() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
@@ -64,14 +71,27 @@ export default function App() {
                 <Route path="/projects/:projectId/sprints/:sprintId/retro" element={<RetroPage />} />
                 <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
                 <Route path="/projects/:projectId/settings" element={<SettingsPage />} />
+                <Route path="/settings/profile" element={<ProfilePage />} />
               </Route>
 
-              {/* Catch all — redirect to dashboard if logged in, landing otherwise */}
+              {/* 404 inside layout for authenticated users */}
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route path="*" element={<NotFoundPage />} />
+              </Route>
+
+              {/* Catch all for unauthenticated */}
               <Route path="*" element={<CatchAllRedirect />} />
             </Routes>
           </Suspense>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }

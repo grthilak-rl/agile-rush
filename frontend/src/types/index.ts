@@ -85,10 +85,63 @@ export interface ProjectStats {
 
 export interface DashboardStats {
   active_projects: number;
+  active_projects_trend: number;
   active_sprints: number;
+  active_sprints_trend: number;
   open_items: number;
+  open_items_trend: number;
   completed_this_week: number;
-  items_last_week: number;
+  completed_last_week: number;
+  completed_trend: number;
+}
+
+export interface BurndownData {
+  sprint: {
+    id: string;
+    name: string;
+    start_date: string;
+    end_date: string;
+    status: string;
+  } | null;
+  actual: { date: string; remaining_points: number }[];
+  ideal: { date: string; remaining_points: number }[];
+}
+
+export interface VelocityData {
+  sprints: {
+    name: string;
+    sprint_number: number;
+    planned_points: number;
+    completed_points: number;
+    status: string;
+  }[];
+  average_velocity: number;
+  trend: 'increasing' | 'decreasing' | 'stable';
+}
+
+export interface ReportSummary {
+  sprints: {
+    name: string;
+    sprint_number: number;
+    start_date: string | null;
+    end_date: string | null;
+    duration_days: number;
+    planned_points: number;
+    completed_points: number;
+    completion_rate: number;
+    items_total: number;
+    items_completed: number;
+    items_added_mid_sprint: number;
+    velocity: number;
+    status: string;
+  }[];
+  overall: {
+    total_sprints_completed: number;
+    average_velocity: number;
+    average_completion_rate: number;
+    total_points_delivered: number;
+    total_items_delivered: number;
+  };
 }
 
 export interface RetroItem {

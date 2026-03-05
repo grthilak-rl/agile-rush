@@ -33,7 +33,7 @@ import { sprintsApi } from '../api/client';
 import { useToast } from '../components/ui/Toast';
 import type { BacklogItem, Sprint, SprintCapacity } from '../types';
 import { Button } from '../components/ui/Button';
-import { PriorityBadge, TypeBadge } from '../components/ui/Badge';
+import { PriorityBadge } from '../components/ui/Badge';
 import { PointsBadge } from '../components/ui/PointsBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Skeleton } from '../components/ui/Skeleton';
@@ -359,7 +359,7 @@ export default function SprintPlanningPage() {
   const [movingSprintToAvailable, setMovingSprintToAvailable] = useState(false);
   const [mobileTab, setMobileTab] = useState<'available' | 'sprint'>('available');
 
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Responsive
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);

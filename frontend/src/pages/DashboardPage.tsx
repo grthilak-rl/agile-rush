@@ -9,10 +9,10 @@ import {
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
-import { projectsApi } from '../api/client';
+import { projectsApi, dashboardApi } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
-import type { Project } from '../types';
+import type { Project, DashboardStats } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -66,6 +66,7 @@ export default function DashboardPage() {
   const { addToast } = useToast();
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,16 +82,20 @@ export default function DashboardPage() {
   const [formType, setFormType] = useState('contract');
   const [formDuration, setFormDuration] = useState(2);
 
-  // Fetch projects on mount
+  // Fetch projects and stats on mount
   useEffect(() => {
     let cancelled = false;
-    const fetchProjects = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
-        const res = await projectsApi.list();
+        const [projectsRes, statsRes] = await Promise.all([
+          projectsApi.list(),
+          dashboardApi.stats().catch(() => null),
+        ]);
         if (!cancelled) {
-          setProjects(res.data);
+          setProjects(projectsRes.data);
+          if (statsRes) setStats(statsRes.data);
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -104,25 +109,31 @@ export default function DashboardPage() {
         }
       }
     };
-    fetchProjects();
+    fetchData();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Compute stats
-  const activeProjectsCount = projects.length;
-  const activeSprintsCount = projects.filter(
-    (p) => p.active_sprint_name !== null
-  ).length;
-  const openItemsCount = projects.reduce(
-    (sum, p) => sum + (p.total_items - p.completed_items),
-    0
-  );
-  const completedItemsCount = projects.reduce(
-    (sum, p) => sum + p.completed_items,
-    0
-  );
+  // Compute stats — prefer real backend stats, fall back to client-side calculation
+  const activeProjectsCount = stats?.active_projects ?? projects.length;
+  const activeSprintsCount = stats?.active_sprints ?? projects.filter((p) => p.active_sprint_name !== null).length;
+  const openItemsCount = stats?.open_items ?? projects.reduce((sum, p) => sum + (p.total_items - p.completed_items), 0);
+  const completedItemsCount = stats?.completed_this_week ?? projects.reduce((sum, p) => sum + p.completed_items, 0);
+
+  const formatTrend = (trend: number | undefined, suffix: string) => {
+    if (trend === undefined || trend === 0) return 'No change';
+    return trend > 0 ? `+${trend} ${suffix}` : `${trend} ${suffix}`;
+  };
+
+  const trendDir = (trend: number | undefined) =>
+    trend !== undefined && trend > 0 ? TrendingUp : trend !== undefined && trend < 0 ? TrendingDown : TrendingDown;
+
+  const trendClr = (trend: number | undefined, invertPositive = false) => {
+    if (trend === undefined || trend === 0) return '#94A3B8';
+    if (invertPositive) return trend > 0 ? '#F97316' : '#10B981';
+    return trend > 0 ? '#10B981' : '#EF4444';
+  };
 
   const statCards = [
     {
@@ -131,9 +142,9 @@ export default function DashboardPage() {
       icon: FolderKanban,
       color: '#2563EB',
       bg: '#EFF6FF',
-      trendText: `+${activeProjectsCount} active`,
-      trendColor: '#10B981',
-      TrendIcon: TrendingUp,
+      trendText: formatTrend(stats?.active_projects_trend, 'vs last week'),
+      trendColor: trendClr(stats?.active_projects_trend),
+      TrendIcon: trendDir(stats?.active_projects_trend),
     },
     {
       label: 'Active Sprints',
@@ -141,12 +152,9 @@ export default function DashboardPage() {
       icon: IterationCw,
       color: '#8B5CF6',
       bg: '#F5F3FF',
-      trendText:
-        activeSprintsCount > 0
-          ? `${activeSprintsCount} running`
-          : 'No sprints',
-      trendColor: activeSprintsCount > 0 ? '#10B981' : '#94A3B8',
-      TrendIcon: activeSprintsCount > 0 ? TrendingUp : TrendingDown,
+      trendText: formatTrend(stats?.active_sprints_trend, 'vs last week'),
+      trendColor: trendClr(stats?.active_sprints_trend),
+      TrendIcon: trendDir(stats?.active_sprints_trend),
     },
     {
       label: 'Open Items',
@@ -154,12 +162,9 @@ export default function DashboardPage() {
       icon: AlertCircle,
       color: '#F97316',
       bg: '#FFF7ED',
-      trendText:
-        openItemsCount > 0
-          ? `${openItemsCount} remaining`
-          : 'All clear',
-      trendColor: openItemsCount > 0 ? '#F97316' : '#10B981',
-      TrendIcon: openItemsCount > 0 ? TrendingUp : TrendingDown,
+      trendText: formatTrend(stats?.open_items_trend, 'vs last week'),
+      trendColor: trendClr(stats?.open_items_trend, true),
+      TrendIcon: trendDir(stats?.open_items_trend),
     },
     {
       label: 'Completed This Week',
@@ -167,12 +172,9 @@ export default function DashboardPage() {
       icon: CheckCircle2,
       color: '#10B981',
       bg: '#ECFDF5',
-      trendText:
-        completedItemsCount > 0
-          ? `+${completedItemsCount} done`
-          : 'No completions yet',
-      trendColor: completedItemsCount > 0 ? '#10B981' : '#94A3B8',
-      TrendIcon: completedItemsCount > 0 ? TrendingUp : TrendingDown,
+      trendText: stats ? `${stats.completed_last_week} last week` : 'No data yet',
+      trendColor: trendClr(stats?.completed_trend),
+      TrendIcon: trendDir(stats?.completed_trend),
     },
   ];
 

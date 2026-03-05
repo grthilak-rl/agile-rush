@@ -5,14 +5,22 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from pydantic import BaseModel
+
 from app.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.project import Project, ProjectType
 from app.models.backlog_item import BacklogItem, ItemStatus
 from app.models.sprint import Sprint, SprintStatus
-from app.models.activity_log import ActivityLog
+from app.models.activity_log import ActivityLog, ActionType, EntityType
+from app.models.retro_item import RetroItem
+from app.models.daily_snapshot import DailySnapshot
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectStatsResponse
+
+
+class DeleteConfirmation(BaseModel):
+    confirm_name: str
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -169,20 +177,89 @@ def update_project(
     return project_resp
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(
+@router.patch("/{project_id}/settings", response_model=ProjectResponse)
+def update_project_settings(
     project_id: str,
+    update_data: ProjectUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     project = verify_project_ownership(project_id, current_user, db)
 
+    update_dict = update_data.model_dump(exclude_unset=True)
+
+    if "name" in update_dict and not update_dict["name"].strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project name cannot be empty",
+        )
+
+    for key, value in update_dict.items():
+        setattr(project, key, value)
+
+    # Activity log
+    log = ActivityLog(
+        project_id=project.id,
+        user_id=current_user.id,
+        action=ActionType.updated,
+        entity_type=EntityType.project,
+        entity_id=project.id,
+        details={"fields_updated": list(update_dict.keys())},
+    )
+    db.add(log)
+
+    db.commit()
+    db.refresh(project)
+
+    total_items = db.query(func.count(BacklogItem.id)).filter(
+        BacklogItem.project_id == project.id
+    ).scalar() or 0
+    completed_items = db.query(func.count(BacklogItem.id)).filter(
+        BacklogItem.project_id == project.id,
+        BacklogItem.status == ItemStatus.done,
+    ).scalar() or 0
+    active_sprint = db.query(Sprint).filter(
+        Sprint.project_id == project.id,
+        Sprint.status == SprintStatus.active,
+    ).first()
+    progress_percentage = (completed_items / total_items * 100) if total_items > 0 else 0.0
+
+    project_resp = ProjectResponse.model_validate(project)
+    project_resp.active_sprint_name = active_sprint.name if active_sprint else None
+    project_resp.total_items = total_items
+    project_resp.completed_items = completed_items
+    project_resp.progress_percentage = round(progress_percentage, 1)
+    return project_resp
+
+
+@router.delete("/{project_id}")
+def delete_project(
+    project_id: str,
+    confirm: DeleteConfirmation = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = verify_project_ownership(project_id, current_user, db)
+
+    if confirm and confirm.confirm_name != project.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project name does not match",
+        )
+
+    # Cascade delete everything
+    db.query(DailySnapshot).filter(
+        DailySnapshot.sprint_id.in_(
+            db.query(Sprint.id).filter(Sprint.project_id == project.id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(RetroItem).filter(RetroItem.project_id == project.id).delete()
     db.query(ActivityLog).filter(ActivityLog.project_id == project.id).delete()
     db.query(BacklogItem).filter(BacklogItem.project_id == project.id).delete()
     db.query(Sprint).filter(Sprint.project_id == project.id).delete()
     db.delete(project)
     db.commit()
-    return None
+    return {"message": "Project deleted"}
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsResponse)

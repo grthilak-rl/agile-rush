@@ -16,6 +16,7 @@ from app.models.retro_item import RetroItem
 from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.schemas.sprint import SprintCreate, SprintUpdate, SprintComplete, SprintResponse
 from app.schemas.backlog_item import BacklogItemResponse
+from app.core.snapshots import create_daily_snapshot
 
 
 class BulkMoveRequest(BaseModel):
@@ -240,6 +241,9 @@ def start_sprint(
         details={"name": sprint.name, "action": "started"},
     )
 
+    # Create initial snapshot
+    create_daily_snapshot(db, sprint.id)
+
     db.commit()
     db.refresh(sprint)
     return SprintResponse.model_validate(sprint)
@@ -318,6 +322,9 @@ def complete_sprint(
             "action": complete_data.action,
         },
     )
+
+    # Final snapshot on completion
+    create_daily_snapshot(db, sprint.id)
 
     db.commit()
     db.refresh(sprint)

@@ -16,6 +16,7 @@ from app.schemas.backlog_item import (
     BacklogItemResponse,
     ReorderRequest,
 )
+from app.core.snapshots import maybe_snapshot_active_sprint
 
 router = APIRouter(prefix="/api/projects", tags=["backlog"])
 
@@ -124,6 +125,10 @@ def create_backlog_item(
         details={"title": item.title, "type": item.type},
     )
 
+    # Snapshot if item added to active sprint
+    if item.sprint_id:
+        maybe_snapshot_active_sprint(db, project_id)
+
     db.commit()
     db.refresh(item)
 
@@ -231,6 +236,15 @@ def update_backlog_item(
             details={"title": item.title, "field": "assignee"},
         )
 
+    # Snapshot on any status change, points change, or sprint assignment change
+    needs_snapshot = (
+        "status" in update_dict
+        or "story_points" in update_dict
+        or "sprint_id" in update_dict
+    )
+    if needs_snapshot:
+        maybe_snapshot_active_sprint(db, project_id)
+
     db.commit()
     db.refresh(item)
 
@@ -271,6 +285,10 @@ def delete_backlog_item(
         entity_id=item.id,
         details={"title": item.title},
     )
+
+    # Snapshot if item was in active sprint
+    if item.sprint_id:
+        maybe_snapshot_active_sprint(db, project_id)
 
     db.delete(item)
     db.commit()

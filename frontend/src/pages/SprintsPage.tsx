@@ -26,7 +26,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ProgressBar } from '../components/ui/ProgressBar';
-import { useOverlayContainer } from '../contexts/OverlayContainerContext';
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,8 +88,6 @@ export default function SprintsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const overlayContainer = useOverlayContainer();
-
   // -------------------------------------------------------------------------
   // Data state
   // -------------------------------------------------------------------------

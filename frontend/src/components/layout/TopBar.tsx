@@ -114,7 +114,7 @@ export function TopBar() {
               <div style={{ fontSize: 12, color: '#94A3B8' }}>{user?.email}</div>
             </div>
             <button
-              onClick={() => { setDropdownOpen(false); }}
+              onClick={() => { setDropdownOpen(false); navigate('/settings/profile'); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -170,6 +170,11 @@ function buildBreadcrumbs(pathname: string, projectName: string | null) {
   }
 
   crumbs.push({ label: 'Dashboard', path: '/dashboard' });
+
+  if (pathname === '/settings/profile') {
+    crumbs.push({ label: 'Profile Settings' });
+    return crumbs;
+  }
 
   if (pathname.startsWith('/projects/')) {
     const segments = pathname.split('/').filter(Boolean);

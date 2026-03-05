@@ -6,10 +6,14 @@ import type {
   Sprint,
   ActivityLog,
   ProjectStats,
+  DashboardStats,
   RetroItem,
   RetroResponse,
   SprintCapacity,
   SprintSummary,
+  BurndownData,
+  VelocityData,
+  ReportSummary,
 } from '../types';
 
 // In dev, Vite proxy forwards /api → http://localhost:8000
@@ -74,7 +78,10 @@ export const projectsApi = {
   get: (id: string) => api.get<Project>(`/projects/${id}`),
   update: (id: string, data: Partial<Project>) =>
     api.patch<Project>(`/projects/${id}`, data),
-  delete: (id: string) => api.delete(`/projects/${id}`),
+  updateSettings: (id: string, data: Partial<Project>) =>
+    api.patch<Project>(`/projects/${id}/settings`, data),
+  delete: (id: string, confirmName?: string) =>
+    api.delete(`/projects/${id}`, { data: confirmName ? { confirm_name: confirmName } : undefined }),
   stats: (id: string) => api.get<ProjectStats>(`/projects/${id}/stats`),
 };
 
@@ -144,6 +151,31 @@ export const retroApi = {
 export const activityApi = {
   list: (projectId: string, params?: { limit?: number; offset?: number }) =>
     api.get<ActivityLog[]>(`/projects/${projectId}/activity`, { params }),
+};
+
+// Reports
+export const reportsApi = {
+  burndown: (projectId: string, sprintId?: string) =>
+    api.get<BurndownData>(`/projects/${projectId}/reports/burndown`, {
+      params: sprintId ? { sprint_id: sprintId } : undefined,
+    }),
+  velocity: (projectId: string) =>
+    api.get<VelocityData>(`/projects/${projectId}/reports/velocity`),
+  summary: (projectId: string) =>
+    api.get<ReportSummary>(`/projects/${projectId}/reports/summary`),
+};
+
+// Dashboard
+export const dashboardApi = {
+  stats: () => api.get<DashboardStats>('/stats/dashboard'),
+};
+
+// Users
+export const usersApi = {
+  updateProfile: (data: { full_name?: string; email?: string; avatar_url?: string }) =>
+    api.patch<User>('/users/me', data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.patch('/users/me/password', data),
 };
 
 export default api;
