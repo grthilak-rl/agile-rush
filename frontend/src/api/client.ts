@@ -6,6 +6,10 @@ import type {
   Sprint,
   ActivityLog,
   ProjectStats,
+  RetroItem,
+  RetroResponse,
+  SprintCapacity,
+  SprintSummary,
 } from '../types';
 
 // In dev, Vite proxy forwards /api → http://localhost:8000
@@ -108,6 +112,32 @@ export const sprintsApi = {
     api.post<Sprint>(`/projects/${projectId}/sprints/${sprintId}/start`),
   complete: (projectId: string, sprintId: string, data: { action: string }) =>
     api.post<Sprint>(`/projects/${projectId}/sprints/${sprintId}/complete`, data),
+  delete: (projectId: string, sprintId: string) =>
+    api.delete(`/projects/${projectId}/sprints/${sprintId}`),
+  items: (projectId: string, sprintId: string) =>
+    api.get<BacklogItem[]>(`/projects/${projectId}/sprints/${sprintId}/items`),
+  capacity: (projectId: string, sprintId: string) =>
+    api.get<SprintCapacity>(`/projects/${projectId}/sprints/${sprintId}/capacity`),
+  summary: (projectId: string, sprintId: string) =>
+    api.get<SprintSummary>(`/projects/${projectId}/sprints/${sprintId}/summary`),
+  unassigned: (projectId: string) =>
+    api.get<BacklogItem[]>(`/projects/${projectId}/backlog/unassigned`),
+  bulkMove: (projectId: string, data: { item_ids: string[]; sprint_id: string | null }) =>
+    api.patch(`/projects/${projectId}/backlog/bulk-move`, data),
+};
+
+// Retro
+export const retroApi = {
+  get: (projectId: string, sprintId: string) =>
+    api.get<RetroResponse>(`/projects/${projectId}/sprints/${sprintId}/retro`),
+  create: (projectId: string, sprintId: string, data: { content: string; column: string }) =>
+    api.post<RetroItem>(`/projects/${projectId}/sprints/${sprintId}/retro`, data),
+  update: (projectId: string, sprintId: string, retroId: string, data: Partial<RetroItem>) =>
+    api.patch<RetroItem>(`/projects/${projectId}/sprints/${sprintId}/retro/${retroId}`, data),
+  delete: (projectId: string, sprintId: string, retroId: string) =>
+    api.delete(`/projects/${projectId}/sprints/${sprintId}/retro/${retroId}`),
+  vote: (projectId: string, sprintId: string, retroId: string) =>
+    api.post<RetroItem>(`/projects/${projectId}/sprints/${sprintId}/retro/${retroId}/vote`),
 };
 
 // Activity

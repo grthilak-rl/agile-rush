@@ -34,3 +34,4 @@ class Project(Base):
     backlog_items = relationship("BacklogItem", back_populates="project", cascade="all, delete-orphan")
     sprints = relationship("Sprint", back_populates="project", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="project", cascade="all, delete-orphan")
+    retro_items = relationship("RetroItem", back_populates="project", cascade="all, delete-orphan")

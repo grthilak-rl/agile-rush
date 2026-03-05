@@ -33,3 +33,4 @@ class Sprint(Base):
     # Relationships
     project = relationship("Project", back_populates="sprints")
     backlog_items = relationship("BacklogItem", back_populates="sprint")
+    retro_items = relationship("RetroItem", back_populates="sprint", cascade="all, delete-orphan")

@@ -559,6 +559,9 @@ export default function BoardPage() {
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [completeAction, setCompleteAction] = useState<'move_to_backlog' | 'move_to_next_sprint'>('move_to_backlog');
   const [completing, setCompleting] = useState(false);
+  const [retroPromptOpen, setRetroPromptOpen] = useState(false);
+  const [completedSprintId, setCompletedSprintId] = useState<string | null>(null);
+  const [completedSprintStats, setCompletedSprintStats] = useState<{ items: number; points: number }>({ items: 0, points: 0 });
 
   // -------------------------------------------------------------------------
   // Delete confirm state
@@ -877,15 +880,19 @@ export default function BoardPage() {
     setCompleting(true);
     try {
       await sprintsApi.complete(projectId, activeSprint.id, { action: completeAction });
+      const doneItems = items.filter((i) => i.status === 'done');
+      const donePoints = doneItems.reduce((s, i) => s + (i.story_points || 0), 0);
+      setCompletedSprintId(activeSprint.id);
+      setCompletedSprintStats({ items: doneItems.length, points: donePoints });
       addToast('success', `${activeSprint.name} completed`);
       setCompleteModalOpen(false);
-      loadData();
+      setRetroPromptOpen(true);
     } catch {
       addToast('error', 'Failed to complete sprint');
     } finally {
       setCompleting(false);
     }
-  }, [projectId, activeSprint, completeAction, addToast, loadData]);
+  }, [projectId, activeSprint, completeAction, addToast, items]);
 
   // -------------------------------------------------------------------------
   // renderDetailPanel
@@ -1305,6 +1312,83 @@ export default function BoardPage() {
     return content;
   };
 
+  // -------------------------------------------------------------------------
+  // renderRetroPrompt
+  // -------------------------------------------------------------------------
+  const renderRetroPrompt = () => {
+    if (!retroPromptOpen || !completedSprintId) return null;
+
+    const content = (
+      <>
+        <div
+          onClick={() => { setRetroPromptOpen(false); loadData(); }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            zIndex: 1000,
+            pointerEvents: 'auto',
+            animation: 'fadeIn 150ms ease forwards',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: '#FFFFFF',
+            borderRadius: 12,
+            padding: 32,
+            width: 400,
+            maxWidth: '90vw',
+            zIndex: 1001,
+            pointerEvents: 'auto',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+            animation: 'fadeInUp 200ms ease forwards',
+            textAlign: 'center' as const,
+          }}
+        >
+          <div style={{ fontSize: 40, marginBottom: 12 }}>&#127881;</div>
+          <h3 style={{ marginBottom: 8, fontSize: 20, fontWeight: 700, color: '#0F172A' }}>
+            Sprint Complete!
+          </h3>
+          <p style={{ color: '#64748B', fontSize: 14, lineHeight: '22px', marginBottom: 24 }}>
+            {completedSprintStats.items} item{completedSprintStats.items !== 1 ? 's' : ''} shipped
+            {' '}&middot; {completedSprintStats.points} point{completedSprintStats.points !== 1 ? 's' : ''}
+          </p>
+          <p style={{ color: '#334155', fontSize: 14, marginBottom: 24 }}>
+            Would you like to run a retrospective?
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRetroPromptOpen(false);
+                navigate(`/projects/${projectId}/sprints`);
+              }}
+            >
+              Skip
+            </Button>
+            <Button
+              onClick={() => {
+                setRetroPromptOpen(false);
+                navigate(`/projects/${projectId}/sprints/${completedSprintId}/retro`);
+              }}
+            >
+              Start Retrospective
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+
+    if (overlayContainer) {
+      return createPortal(content, overlayContainer);
+    }
+    return content;
+  };
+
   // =========================================================================
   // RENDER
   // =========================================================================
@@ -1482,6 +1566,9 @@ export default function BoardPage() {
 
       {/* Complete Sprint Modal */}
       {renderCompleteSprintModal()}
+
+      {/* Retro Prompt */}
+      {renderRetroPrompt()}
 
       {/* Confirm Dialog (Delete) */}
       <ConfirmDialog

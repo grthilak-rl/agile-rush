@@ -90,3 +90,73 @@ export interface DashboardStats {
   completed_this_week: number;
   items_last_week: number;
 }
+
+export interface RetroItem {
+  id: string;
+  sprint_id: string;
+  project_id: string;
+  column: 'went_well' | 'didnt_go_well' | 'action_item';
+  content: string;
+  votes: number;
+  voted_by: string[];
+  resolved: boolean;
+  created_by: string;
+  creator: User | null;
+  created_at: string;
+  updated_at: string;
+  carried_over: boolean;
+  user_has_voted: boolean;
+}
+
+export interface RetroResponse {
+  went_well: RetroItem[];
+  didnt_go_well: RetroItem[];
+  action_item: RetroItem[];
+  carried_over_actions: RetroItem[];
+  sprint: {
+    id: string;
+    name: string;
+    goal: string | null;
+    sprint_number: number;
+    start_date: string | null;
+    end_date: string | null;
+    status: string;
+    items_completed: number;
+    items_total: number;
+    points_completed: number;
+    points_total: number;
+  } | null;
+}
+
+export interface SprintCapacity {
+  sprint_id: string;
+  sprint_name: string;
+  total_items: number;
+  total_points: number;
+  team_velocity: number | null;
+  capacity_status: 'under' | 'at' | 'over';
+}
+
+export interface SprintSummary {
+  sprint: {
+    id: string;
+    name: string;
+    goal: string | null;
+    sprint_number: number;
+    start_date: string | null;
+    end_date: string | null;
+    status: string;
+    duration_weeks: number;
+  };
+  planned_points: number;
+  completed_points: number;
+  completion_rate: number;
+  items_completed: number;
+  items_total: number;
+  items_added_mid_sprint: number;
+  velocity: number;
+  duration_days: number;
+  has_retro: boolean;
+  completed_items: BacklogItem[];
+  incomplete_items: BacklogItem[];
+}

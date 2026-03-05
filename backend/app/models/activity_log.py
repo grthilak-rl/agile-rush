@@ -19,6 +19,7 @@ class EntityType(str, enum.Enum):
     backlog_item = "backlog_item"
     sprint = "sprint"
     project = "project"
+    retro_item = "retro_item"
 
 
 class ActivityLog(Base):

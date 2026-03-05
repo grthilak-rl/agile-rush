@@ -64,6 +64,8 @@ export function Sidebar() {
     if (isProjectContext && projectId) {
       const fullPath = `/projects/${projectId}${path}`;
       if (path === '') return location.pathname === `/projects/${projectId}`;
+      // Sprint sub-routes (plan, summary, retro) should highlight the Sprints nav item
+      if (path === '/sprints') return location.pathname.startsWith(fullPath);
       return location.pathname === fullPath;
     }
     return false;

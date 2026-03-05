@@ -15,6 +15,9 @@ const ProjectOverviewPage = lazy(() => import('./pages/ProjectOverviewPage'));
 const BacklogPage = lazy(() => import('./pages/BacklogPage'));
 const BoardPage = lazy(() => import('./pages/BoardPage'));
 const SprintsPage = lazy(() => import('./pages/SprintsPage'));
+const SprintPlanningPage = lazy(() => import('./pages/SprintPlanningPage'));
+const SprintSummaryPage = lazy(() => import('./pages/SprintSummaryPage'));
+const RetroPage = lazy(() => import('./pages/RetroPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
@@ -56,6 +59,9 @@ export default function App() {
                 <Route path="/projects/:projectId/backlog" element={<BacklogPage />} />
                 <Route path="/projects/:projectId/board" element={<BoardPage />} />
                 <Route path="/projects/:projectId/sprints" element={<SprintsPage />} />
+                <Route path="/projects/:projectId/sprints/:sprintId/plan" element={<SprintPlanningPage />} />
+                <Route path="/projects/:projectId/sprints/:sprintId/summary" element={<SprintSummaryPage />} />
+                <Route path="/projects/:projectId/sprints/:sprintId/retro" element={<RetroPage />} />
                 <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
                 <Route path="/projects/:projectId/settings" element={<SettingsPage />} />
               </Route>
