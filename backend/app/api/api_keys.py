@@ -22,7 +22,7 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-@router.post("/api-keys")
+@router.post("/api-keys", status_code=status.HTTP_201_CREATED)
 def create_api_key(
     data: CreateApiKeyRequest,
     db: Session = Depends(get_db),

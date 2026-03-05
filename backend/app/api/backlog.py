@@ -168,6 +168,59 @@ def reorder_backlog_items(
     return {"message": "Items reordered successfully"}
 
 
+@router.get("/{project_id}/backlog/unassigned", response_model=List[BacklogItemResponse])
+def list_unassigned_items(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_project_with_access(project_id, current_user, db, "viewer")
+
+    items = (
+        db.query(BacklogItem)
+        .options(joinedload(BacklogItem.assignee))
+        .filter(
+            BacklogItem.project_id == project_id,
+            BacklogItem.sprint_id.is_(None),
+            BacklogItem.status == ItemStatus.backlog,
+        )
+        .order_by(BacklogItem.position)
+        .all()
+    )
+    return [BacklogItemResponse.model_validate(item) for item in items]
+
+
+@router.patch("/{project_id}/backlog/bulk-move")
+def bulk_move_items(
+    project_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_project_with_access(project_id, current_user, db, "member")
+
+    item_ids = data.get("item_ids", [])
+    sprint_id = data.get("sprint_id")
+    moved = 0
+
+    for item_id in item_ids:
+        item = db.query(BacklogItem).filter(
+            BacklogItem.id == item_id,
+            BacklogItem.project_id == project_id,
+        ).first()
+        if item:
+            item.sprint_id = sprint_id
+            if sprint_id:
+                item.status = ItemStatus.todo
+            moved += 1
+
+    if moved > 0:
+        maybe_snapshot_active_sprint(db, project_id)
+        db.commit()
+
+    return {"moved": moved}
+
+
 @router.get("/{project_id}/backlog/{item_id}", response_model=BacklogItemResponse)
 def get_backlog_item(
     project_id: str,
