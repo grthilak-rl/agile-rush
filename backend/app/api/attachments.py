@@ -147,7 +147,7 @@ def list_attachments(
 
 
 @router.delete("/{project_id}/backlog/{item_id}/attachments/{attachment_id}")
-def delete_attachment(
+async def delete_attachment(
     project_id: str,
     item_id: str,
     attachment_id: str,
@@ -167,18 +167,7 @@ def delete_attachment(
     if attachment.uploaded_by != current_user.id and user_role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Not allowed to delete this attachment")
 
-    import asyncio
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        # We're in an async context, use create_task
-        import threading
-        def _delete():
-            import asyncio as aio
-            aio.run(storage_service.delete(attachment.file_key))
-        t = threading.Thread(target=_delete)
-        t.start()
-    else:
-        asyncio.run(storage_service.delete(attachment.file_key))
+    await storage_service.delete(attachment.file_key)
 
     db.delete(attachment)
     db.commit()
