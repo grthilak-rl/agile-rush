@@ -20,6 +20,7 @@ from app.models.notification import NotificationType
 from app.schemas.sprint import SprintCreate, SprintUpdate, SprintComplete, SprintResponse
 from app.schemas.backlog_item import BacklogItemResponse
 from app.core.snapshots import create_daily_snapshot
+from app.core.websocket import broadcast_event
 
 
 class BulkMoveRequest(BaseModel):
@@ -173,6 +174,16 @@ def update_sprint(
 
     db.commit()
     db.refresh(sprint)
+
+    broadcast_event(project_id, {
+        "type": "sprint:updated",
+        "data": {
+            "sprint_id": str(sprint.id),
+            "sprint_name": sprint.name,
+            "updated_by": str(current_user.id),
+        }
+    })
+
     return SprintResponse.model_validate(sprint)
 
 
@@ -240,6 +251,17 @@ def start_sprint(
 
     db.commit()
     db.refresh(sprint)
+
+    broadcast_event(project_id, {
+        "type": "sprint:updated",
+        "data": {
+            "sprint_id": str(sprint.id),
+            "sprint_name": sprint.name,
+            "action": "started",
+            "updated_by": str(current_user.id),
+        }
+    })
+
     return SprintResponse.model_validate(sprint)
 
 
@@ -333,6 +355,17 @@ def complete_sprint(
 
     db.commit()
     db.refresh(sprint)
+
+    broadcast_event(project_id, {
+        "type": "sprint:updated",
+        "data": {
+            "sprint_id": str(sprint.id),
+            "sprint_name": sprint.name,
+            "action": "completed",
+            "updated_by": str(current_user.id),
+        }
+    })
+
     return SprintResponse.model_validate(sprint)
 
 

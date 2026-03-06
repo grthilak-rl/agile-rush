@@ -28,7 +28,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    access_token = create_access_token(str(user.id))
+    access_token = create_access_token(str(user.id), user.full_name)
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
@@ -45,7 +45,7 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
             detail="Invalid email or password",
         )
 
-    access_token = create_access_token(str(user.id))
+    access_token = create_access_token(str(user.id), user.full_name)
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",

@@ -20,6 +20,7 @@ from app.schemas.backlog_item import (
     ReorderRequest,
 )
 from app.core.snapshots import maybe_snapshot_active_sprint
+from app.core.websocket import broadcast_event
 
 router = APIRouter(prefix="/api/projects", tags=["backlog"])
 
@@ -230,7 +231,18 @@ def create_backlog_item(
         .filter(BacklogItem.id == item.id)
         .first()
     )
-    return BacklogItemResponse.model_validate(loaded_item)
+    response = BacklogItemResponse.model_validate(loaded_item)
+
+    broadcast_event(project_id, {
+        "type": "item:created",
+        "data": {
+            "item": response.model_dump(mode="json"),
+            "created_by": str(current_user.id),
+            "created_by_name": current_user.full_name,
+        }
+    })
+
+    return response
 
 
 @router.patch("/{project_id}/backlog/reorder", status_code=200)
@@ -428,6 +440,36 @@ def update_backlog_item(
         .filter(BacklogItem.id == item.id)
         .first()
     )
+
+    # Broadcast appropriate event
+    if "status" in update_dict and update_dict["status"] != old_status:
+        broadcast_event(project_id, {
+            "type": "item:status_changed",
+            "data": {
+                "item_id": str(item.id),
+                "from_status": old_status,
+                "to_status": update_dict["status"],
+                "moved_by": str(current_user.id),
+                "moved_by_name": current_user.full_name,
+                "item_title": item.title,
+            }
+        })
+    else:
+        broadcast_event(project_id, {
+            "type": "item:updated",
+            "data": {
+                "item_id": str(item.id),
+                "changes": {
+                    k: v if not hasattr(v, 'isoformat')
+                    else v.isoformat()
+                    for k, v in update_dict.items()
+                },
+                "updated_by": str(current_user.id),
+                "updated_by_name": current_user.full_name,
+                "item_title": item.title,
+            }
+        })
+
     return BacklogItemResponse.model_validate(loaded_item)
 
 
@@ -460,9 +502,22 @@ def delete_backlog_item(
         details={"title": item.title},
     )
 
+    item_title = item.title
+
     if item.sprint_id:
         maybe_snapshot_active_sprint(db, project_id)
 
     db.delete(item)
     db.commit()
+
+    broadcast_event(project_id, {
+        "type": "item:deleted",
+        "data": {
+            "item_id": str(item_id),
+            "deleted_by": str(current_user.id),
+            "deleted_by_name": current_user.full_name,
+            "item_title": item_title,
+        }
+    })
+
     return None

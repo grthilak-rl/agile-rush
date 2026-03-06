@@ -20,7 +20,6 @@ import {
   FileText,
   Image as ImageIcon,
   MessageSquare,
-  Send,
   Edit3,
   MoreHorizontal,
 } from 'lucide-react';
@@ -44,6 +43,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { backlogApi, sprintsApi, membersApi, attachmentsApi, commentsApi, activityApi } from '../api/client';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../hooks/useAuth';
+import { useProjectWebSocket, type WSEvent } from '../hooks/useProjectWebSocket';
+import { MentionInput, MentionText } from '../components/ui/MentionInput';
+import { PresenceAvatars } from '../components/ui/PresenceAvatars';
 import type { BacklogItem, Sprint, AcceptanceCriteria, ProjectMember, Attachment, Comment, ActivityLog } from '../types';
 import { Button } from '../components/ui/Button';
 import { Badge, PriorityBadge } from '../components/ui/Badge';
@@ -138,20 +140,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function renderMentionText(text: string): React.ReactNode {
-  const parts = text.split(/(@\[[^\]]+\]\([^)]+\))/g);
-  return parts.map((part, i) => {
-    const match = part.match(/^@\[([^\]]+)\]\(([^)]+)\)$/);
-    if (match) {
-      return (
-        <span key={i} style={{ color: '#2563EB', fontWeight: 600, backgroundColor: '#EFF6FF', padding: '0 3px', borderRadius: 3 }}>
-          @{match[1]}
-        </span>
-      );
-    }
-    return <span key={i}>{part}</span>;
-  });
-}
 
 function timeAgo(dateStr: string): string {
   const now = new Date();
@@ -491,10 +479,6 @@ export default function BacklogPage() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentText, setEditCommentText] = useState('');
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [mentionResults, setMentionResults] = useState<{ id: string; full_name: string }[]>([]);
-  const [mentionCursorPos, setMentionCursorPos] = useState(0);
-  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Drag & drop
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -504,6 +488,150 @@ export default function BacklogPage() {
 
   // Track last-saved form snapshot (to skip auto-save when values haven't changed)
   const lastSavedRef = useRef<string>('');
+
+  // -----------------------------------------------------------------------
+  // Presence (online members)
+  // -----------------------------------------------------------------------
+  const [onlineMembers, setOnlineMembers] = useState<Map<string, string>>(new Map());
+
+  // Ref for loadData (used by WS handler to avoid circular deps)
+  const loadDataRef = useRef<() => void>(() => {});
+
+  // -----------------------------------------------------------------------
+  // Real-time toast batching
+  // -----------------------------------------------------------------------
+  const realtimeToastQueue = useRef<string[]>([]);
+  const realtimeToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeToastCount = useRef(0);
+
+  const showRealtimeToast = useCallback((message: string) => {
+    realtimeToastQueue.current.push(message);
+
+    if (realtimeToastTimer.current) return;
+
+    realtimeToastTimer.current = setTimeout(() => {
+      const queue = realtimeToastQueue.current;
+      realtimeToastQueue.current = [];
+      realtimeToastTimer.current = null;
+
+      if (queue.length >= 3) {
+        addToast('info', 'Multiple changes -- backlog updated');
+      } else {
+        for (const msg of queue.slice(0, 2)) {
+          if (activeToastCount.current < 2) {
+            activeToastCount.current++;
+            addToast('info', msg);
+            setTimeout(() => { activeToastCount.current = Math.max(0, activeToastCount.current - 1); }, 3000);
+          }
+        }
+      }
+    }, 500);
+  }, [addToast]);
+
+  // -----------------------------------------------------------------------
+  // WebSocket event handler
+  // -----------------------------------------------------------------------
+  const handleWSEvent = useCallback((event: WSEvent) => {
+    const d = event.data as Record<string, string>;
+
+    // Presence events
+    switch (event.type) {
+      case 'members:online_list': {
+        const map = new Map<string, string>();
+        (event.data as unknown as { user_id: string; user_name: string }[]).forEach(
+          (m) => map.set(m.user_id, m.user_name)
+        );
+        setOnlineMembers(map);
+        return;
+      }
+      case 'member:online':
+        setOnlineMembers((prev) => new Map(prev).set(d.user_id, d.user_name));
+        return;
+      case 'member:offline':
+        setOnlineMembers((prev) => {
+          const next = new Map(prev);
+          next.delete(d.user_id);
+          return next;
+        });
+        return;
+    }
+
+    // Ignore own events
+    if (
+      d.moved_by === currentUser?.id ||
+      d.updated_by === currentUser?.id ||
+      d.created_by === currentUser?.id ||
+      d.deleted_by === currentUser?.id
+    ) {
+      return;
+    }
+
+    switch (event.type) {
+      case 'item:created': {
+        const { item, created_by_name } = event.data as { item: BacklogItem; created_by_name: string; [key: string]: unknown };
+        setItems((prev) => {
+          if (prev.some((i) => i.id === item.id)) return prev;
+          return [...prev, item];
+        });
+        showRealtimeToast(`${created_by_name} created '${item.title}'`);
+        break;
+      }
+      case 'item:updated': {
+        const { item_id, changes } = event.data as { item_id: string; changes: Record<string, unknown>; [key: string]: unknown };
+        setItems((prev) => prev.map((item) =>
+          item.id === item_id ? { ...item, ...changes } : item
+        ));
+        if (editingItem?.id === item_id) {
+          setEditingItem((prev) => prev ? { ...prev, ...changes as Partial<BacklogItem> } : prev);
+        }
+        break;
+      }
+      case 'item:status_changed': {
+        const { item_id, to_status, moved_by_name, item_title } = d;
+        setItems((prev) => prev.map((item) =>
+          item.id === item_id ? { ...item, status: to_status as BacklogItem['status'] } : item
+        ));
+        const statusLabels: Record<string, string> = {
+          backlog: 'Backlog', todo: 'To Do', in_progress: 'In Progress',
+          in_review: 'In Review', done: 'Done',
+        };
+        showRealtimeToast(
+          `${moved_by_name} moved '${item_title || 'item'}' to ${statusLabels[to_status] || to_status}`
+        );
+        break;
+      }
+      case 'item:deleted': {
+        const { item_id, deleted_by_name, item_title } = d;
+        setItems((prev) => prev.filter((i) => i.id !== item_id));
+        if (editingItem?.id === item_id) {
+          setPanelOpen(false);
+          setEditingItem(null);
+          addToast('info', 'This item was deleted by another team member');
+        }
+        showRealtimeToast(`${deleted_by_name} deleted '${item_title || 'item'}'`);
+        break;
+      }
+      case 'comment:added': {
+        const { item_id, comment, author_name, item_title } = event.data as {
+          item_id: string; comment: Comment; author_name: string; item_title: string; [key: string]: unknown;
+        };
+        if (editingItem?.id === item_id) {
+          setComments((prev) => {
+            if (prev.some((c) => c.id === comment.id)) return prev;
+            return [...prev, comment];
+          });
+        }
+        showRealtimeToast(`${author_name} commented on '${item_title || 'item'}'`);
+        break;
+      }
+      case 'sprint:updated': {
+        loadDataRef.current();
+        break;
+      }
+    }
+  }, [currentUser, editingItem, showRealtimeToast, addToast]);
+
+  useProjectWebSocket(projectId, handleWSEvent);
 
   // -----------------------------------------------------------------------
   // Data loading
@@ -536,6 +664,9 @@ export default function BacklogPage() {
       setLoading(false);
     }
   }, [projectId, addToast]);
+
+  // Keep ref in sync for WS handler
+  useEffect(() => { loadDataRef.current = loadData; }, [loadData]);
 
   useEffect(() => {
     loadData();
@@ -1101,50 +1232,6 @@ export default function BacklogPage() {
       addToast('error', 'Failed to delete comment');
     }
   }, [projectId, editingItem, addToast]);
-
-  // Mention autocomplete
-  useEffect(() => {
-    if (mentionQuery === null || !projectId) {
-      setMentionResults([]);
-      return;
-    }
-    const timeout = setTimeout(async () => {
-      try {
-        const res = await membersApi.search(projectId, mentionQuery);
-        setMentionResults(res.data.map((m) => ({ id: m.user_id, full_name: m.full_name })));
-      } catch {
-        setMentionResults([]);
-      }
-    }, 200);
-    return () => clearTimeout(timeout);
-  }, [mentionQuery, projectId]);
-
-  const handleCommentInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setCommentText(val);
-    const cursor = e.target.selectionStart;
-    setMentionCursorPos(cursor);
-    // Check if we're in an @mention
-    const textBefore = val.slice(0, cursor);
-    const match = textBefore.match(/@(\w*)$/);
-    if (match) {
-      setMentionQuery(match[1]);
-    } else {
-      setMentionQuery(null);
-    }
-  }, []);
-
-  const insertMention = useCallback((user: { id: string; full_name: string }) => {
-    const textBefore = commentText.slice(0, mentionCursorPos);
-    const textAfter = commentText.slice(mentionCursorPos);
-    const atIdx = textBefore.lastIndexOf('@');
-    const mention = `@[${user.full_name}](${user.id})`;
-    const newText = textBefore.slice(0, atIdx) + mention + ' ' + textAfter;
-    setCommentText(newText);
-    setMentionQuery(null);
-    setMentionResults([]);
-    commentInputRef.current?.focus();
-  }, [commentText, mentionCursorPos]);
 
   // -----------------------------------------------------------------------
   // Render: Section
@@ -2021,73 +2108,15 @@ export default function BacklogPage() {
               </label>
 
               {/* Comment input */}
-              <div style={{ marginBottom: 16, position: 'relative' }}>
-                <textarea
-                  ref={commentInputRef}
+              <div style={{ marginBottom: 16 }}>
+                <MentionInput
                   value={commentText}
-                  onChange={handleCommentInput}
-                  onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSubmitComment();
-                    }
-                  }}
-                  placeholder="Add a comment... Use @ to mention"
-                  rows={2}
-                  style={{
-                    ...fieldStyle,
-                    minHeight: 56,
-                    resize: 'none',
-                    fontFamily: 'inherit',
-                    lineHeight: '20px',
-                  }}
+                  onChange={setCommentText}
+                  onSubmit={handleSubmitComment}
+                  projectId={projectId!}
+                  submitting={submittingComment}
+                  submitLabel={submittingComment ? 'Sending...' : 'Comment'}
                 />
-                {/* Mention dropdown */}
-                {mentionQuery !== null && mentionResults.length > 0 && (
-                  <div style={{
-                    position: 'absolute', bottom: '100%', left: 0, right: 0,
-                    backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0',
-                    borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    maxHeight: 160, overflow: 'auto', zIndex: 10,
-                    marginBottom: 4,
-                  }}>
-                    {mentionResults.map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => insertMention(u)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '8px 12px', width: '100%',
-                          border: 'none', backgroundColor: 'transparent',
-                          cursor: 'pointer', fontSize: 13, color: '#0F172A',
-                          textAlign: 'left', transition: 'background-color 100ms',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F1F5F9'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-                      >
-                        <Avatar name={u.full_name} size={24} />
-                        {u.full_name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
-                  <button
-                    onClick={handleSubmitComment}
-                    disabled={!commentText.trim() || submittingComment}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      padding: '5px 12px', borderRadius: 6,
-                      backgroundColor: commentText.trim() ? '#2563EB' : '#E2E8F0',
-                      color: commentText.trim() ? '#FFFFFF' : '#94A3B8',
-                      border: 'none', cursor: commentText.trim() ? 'pointer' : 'default',
-                      fontSize: 12, fontWeight: 600, transition: 'all 150ms',
-                    }}
-                  >
-                    <Send size={12} />
-                    {submittingComment ? 'Sending...' : 'Comment'}
-                  </button>
-                </div>
               </div>
 
               {/* Timeline: interleaved activities + comments */}
@@ -2198,7 +2227,7 @@ export default function BacklogPage() {
                             </div>
                           ) : (
                             <div style={{ fontSize: 13, color: '#334155', lineHeight: '20px', whiteSpace: 'pre-wrap' }}>
-                              {renderMentionText(c.content)}
+                              <MentionText content={c.content} />
                             </div>
                           )}
                         </div>
@@ -2350,12 +2379,18 @@ export default function BacklogPage() {
             {totalFilteredPoints} story points
           </p>
         </div>
-        <Button
-          icon={<Plus size={16} strokeWidth={2} />}
-          onClick={openCreatePanel}
-        >
-          Add Item
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <PresenceAvatars
+            onlineMembers={onlineMembers}
+            currentUserId={currentUser?.id || ''}
+          />
+          <Button
+            icon={<Plus size={16} strokeWidth={2} />}
+            onClick={openCreatePanel}
+          >
+            Add Item
+          </Button>
+        </div>
       </div>
 
       {/* ============================================================= */}

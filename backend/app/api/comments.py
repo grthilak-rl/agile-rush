@@ -15,6 +15,7 @@ from app.models.backlog_item import BacklogItem
 from app.models.comment import Comment
 from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.models.notification import NotificationType
+from app.core.websocket import broadcast_event
 
 router = APIRouter(prefix="/api/projects", tags=["comments"])
 
@@ -154,7 +155,20 @@ def create_comment(
     db.commit()
     db.refresh(comment)
 
-    return _comment_response(comment)
+    response = _comment_response(comment)
+
+    broadcast_event(project_id, {
+        "type": "comment:added",
+        "data": {
+            "item_id": str(item_id),
+            "comment": response,
+            "author_name": current_user.full_name,
+            "created_by": str(current_user.id),
+            "item_title": item.title,
+        }
+    })
+
+    return response
 
 
 @router.patch("/{project_id}/backlog/{item_id}/comments/{comment_id}")

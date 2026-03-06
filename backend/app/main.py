@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -27,6 +28,7 @@ from app.api.api_keys import router as api_keys_router
 from app.api.external import router as external_router
 from app.api.attachments import router as attachments_router
 from app.api.comments import router as comments_router
+from app.api.ws import router as ws_router
 
 # Import all models so they are registered with Base.metadata
 import app.models  # noqa: F401
@@ -36,6 +38,9 @@ import app.models  # noqa: F401
 async def lifespan(app: FastAPI):
     # Create all tables on startup (for dev convenience)
     Base.metadata.create_all(bind=engine)
+    # Store event loop reference for sync->async WebSocket broadcasts
+    from app.core.websocket import set_event_loop
+    set_event_loop(asyncio.get_running_loop())
     yield
 
 
@@ -77,6 +82,7 @@ app.include_router(api_keys_router)
 app.include_router(external_router)
 app.include_router(attachments_router)
 app.include_router(comments_router)
+app.include_router(ws_router)
 
 
 @app.get("/")
