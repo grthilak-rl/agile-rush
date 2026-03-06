@@ -1,0 +1,115 @@
+{
+  "name": "Sample Trello Board",
+  "lists": [
+    {"id": "list1", "name": "Backlog", "pos": 100},
+    {"id": "list2", "name": "To Do", "pos": 200},
+    {"id": "list3", "name": "In Progress", "pos": 300},
+    {"id": "list4", "name": "Review", "pos": 400},
+    {"id": "list5", "name": "Done", "pos": 500}
+  ],
+  "cards": [
+    {
+      "id": "card1",
+      "name": "Set up project structure",
+      "desc": "Initialize the project with proper folder structure and dependencies.",
+      "idList": "list5",
+      "labels": [{"name": "setup", "color": "green"}],
+      "due": null,
+      "dueComplete": false,
+      "pos": 100,
+      "closed": false,
+      "idMembers": ["member1"],
+      "idChecklists": ["cl1"]
+    },
+    {
+      "id": "card2",
+      "name": "User authentication flow",
+      "desc": "Implement login, registration, and password reset using JWT.",
+      "idList": "list3",
+      "labels": [{"name": "auth", "color": "blue"}, {"name": "security", "color": "orange"}],
+      "due": "2026-02-15T12:00:00.000Z",
+      "dueComplete": false,
+      "pos": 200,
+      "closed": false,
+      "idMembers": ["member1"],
+      "idChecklists": ["cl2"]
+    },
+    {
+      "id": "card3",
+      "name": "Fix login redirect loop",
+      "desc": "Users are stuck in a redirect loop when their session expires.",
+      "idList": "list4",
+      "labels": [{"name": "critical", "color": "red"}],
+      "due": "2026-01-28T12:00:00.000Z",
+      "dueComplete": false,
+      "pos": 300,
+      "closed": false,
+      "idMembers": [],
+      "idChecklists": []
+    },
+    {
+      "id": "card4",
+      "name": "Dashboard layout",
+      "desc": "Create the main dashboard with project overview widgets.",
+      "idList": "list2",
+      "labels": [{"name": "frontend", "color": "purple"}],
+      "due": "2026-03-01T12:00:00.000Z",
+      "dueComplete": false,
+      "pos": 400,
+      "closed": false,
+      "idMembers": ["member2"],
+      "idChecklists": []
+    },
+    {
+      "id": "card5",
+      "name": "API rate limiting",
+      "desc": "Add rate limiting middleware to prevent abuse.",
+      "idList": "list1",
+      "labels": [{"name": "backend", "color": "blue"}],
+      "due": null,
+      "dueComplete": false,
+      "pos": 500,
+      "closed": false,
+      "idMembers": [],
+      "idChecklists": []
+    },
+    {
+      "id": "card6",
+      "name": "Archived card - should be skipped",
+      "desc": "This card is archived.",
+      "idList": "list5",
+      "labels": [],
+      "due": null,
+      "dueComplete": false,
+      "pos": 600,
+      "closed": true,
+      "idMembers": [],
+      "idChecklists": []
+    }
+  ],
+  "members": [
+    {"id": "member1", "fullName": "Alice Johnson", "username": "alicej"},
+    {"id": "member2", "fullName": "Bob Smith", "username": "bobsmith"}
+  ],
+  "checklists": [
+    {
+      "id": "cl1",
+      "name": "Setup Checklist",
+      "checkItems": [
+        {"name": "Create repository", "state": "complete"},
+        {"name": "Configure CI/CD", "state": "complete"},
+        {"name": "Set up staging environment", "state": "incomplete"}
+      ]
+    },
+    {
+      "id": "cl2",
+      "name": "Auth Requirements",
+      "checkItems": [
+        {"name": "Login form with validation", "state": "complete"},
+        {"name": "Registration with email verification", "state": "incomplete"},
+        {"name": "Password reset flow", "state": "incomplete"},
+        {"name": "Remember me functionality", "state": "incomplete"}
+      ]
+    }
+  ]
+}

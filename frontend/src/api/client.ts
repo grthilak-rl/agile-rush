@@ -270,6 +270,59 @@ export const commentsApi = {
     api.delete(`/projects/${projectId}/backlog/${itemId}/comments/${commentId}`),
 };
 
+// Import / Export
+export const importExportApi = {
+  preview: (projectId: string, file: File, source: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('source', source);
+    return api.post<ImportPreviewResponse>(`/projects/${projectId}/import/preview`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  executeImport: (projectId: string, file: File, source: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('source', source);
+    return api.post<ImportResultResponse>(`/projects/${projectId}/import`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  downloadTemplate: (projectId: string) =>
+    api.get(`/projects/${projectId}/import/template`, { responseType: 'blob' }),
+  exportCsv: (projectId: string, params?: { sprint_id?: string; status?: string }) =>
+    api.get(`/projects/${projectId}/export/csv`, { params, responseType: 'blob' }),
+  exportJson: (projectId: string, params?: { sprint_id?: string; include_comments?: boolean }) =>
+    api.get(`/projects/${projectId}/export/json`, { params, responseType: 'blob' }),
+  exportPdf: (projectId: string, sprintId: string) =>
+    api.get(`/projects/${projectId}/export/pdf`, { params: { sprint_id: sprintId }, responseType: 'blob' }),
+};
+
+export interface ImportPreviewResponse {
+  source: string;
+  total_items: number;
+  items_preview: {
+    title: string;
+    type: string;
+    status: string;
+    priority: string;
+    story_points: number | null;
+    labels: string[];
+    due_date: string | null;
+  }[];
+  status_mapping: Record<string, string>;
+  unmapped_statuses: string[];
+  warnings: string[];
+}
+
+export interface ImportResultResponse {
+  success: boolean;
+  items_created: number;
+  labels_found: string[];
+  errors: string[];
+  warnings: string[];
+}
+
 // Calendar
 export const calendarApi = {
   get: (projectId: string, start: string, end: string) =>

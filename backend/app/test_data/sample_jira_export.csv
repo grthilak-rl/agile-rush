@@ -1,0 +1,9 @@
+Summary,Issue key,Issue Type,Status,Priority,Assignee,Reporter,Created,Updated,Due Date,Description,Labels,Story Points,Sprint
+User authentication with JWT,PROJ-001,Story,In Progress,High,alice@example.com,bob@example.com,2026-01-10,2026-01-20,2026-02-15,Implement JWT-based authentication for the API,auth security,8,Sprint 1
+Fix login redirect loop,PROJ-002,Bug,In Review,Critical,bob@example.com,alice@example.com,2026-01-15,2026-01-22,2026-01-28,Users are stuck in a redirect loop when session expires,bugfix,3,Sprint 1
+Dashboard layout redesign,PROJ-003,Story,To Do,Medium,,alice@example.com,2026-01-18,2026-01-18,2026-03-01,Redesign the main dashboard with new widgets,frontend design,5,Sprint 2
+CI/CD pipeline setup,PROJ-004,Task,Backlog,High,,bob@example.com,2026-01-20,2026-01-20,,Set up GitHub Actions for automated testing and deployment,devops,5,
+Database migration scripts,PROJ-005,Task,Done,Medium,alice@example.com,alice@example.com,2026-01-05,2026-01-15,2026-01-20,Create Alembic migration scripts for all models,backend,3,Sprint 1
+API documentation,PROJ-006,Task,To Do,Low,,bob@example.com,2026-01-22,2026-01-22,,Generate OpenAPI documentation for all endpoints,docs,2,Sprint 2
+Performance optimization,PROJ-007,Story,Backlog,High,,alice@example.com,2026-01-25,2026-01-25,,Optimize database queries and add caching,performance backend,8,
+Fix notification emails,PROJ-008,Bug,In Progress,Medium,bob@example.com,alice@example.com,2026-01-20,2026-01-23,2026-02-01,Email notifications are not being sent for overdue items,bugfix notifications,2,Sprint 1

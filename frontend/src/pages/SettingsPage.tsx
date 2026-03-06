@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings, Trash2, Save } from 'lucide-react';
-import { projectsApi, membersApi } from '../api/client';
+import { projectsApi, membersApi, sprintsApi } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
 import { TeamPanel } from '../components/team/TeamPanel';
-import type { Project } from '../types';
+import { ImportExportPanel } from '../components/ImportExportPanel';
+import type { Project, Sprint } from '../types';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -48,6 +49,9 @@ export default function SettingsPage() {
   const [projectType, setProjectType] = useState('contract');
   const [sprintDuration, setSprintDuration] = useState(2);
 
+  // Sprints (for export)
+  const [projectSprints, setProjectSprints] = useState<Sprint[]>([]);
+
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
@@ -73,6 +77,11 @@ export default function SettingsPage() {
     membersApi.list(projectId).then((res) => {
       const me = res.data.find((m) => m.user_id === user?.id);
       if (me) setUserRole(me.role);
+    }).catch(() => {});
+
+    // Load sprints for export
+    sprintsApi.list(projectId).then((res) => {
+      setProjectSprints(res.data);
     }).catch(() => {});
   }, [projectId, addToast, user?.id]);
 
@@ -252,6 +261,15 @@ export default function SettingsPage() {
         <div style={{ marginBottom: 24 }}>
           <TeamPanel projectId={projectId} userRole={userRole} />
         </div>
+      )}
+
+      {/* Import & Export */}
+      {projectId && (userRole === 'owner' || userRole === 'admin') && (
+        <ImportExportPanel
+          projectId={projectId}
+          sprints={projectSprints}
+          onImportComplete={() => navigate(`/projects/${projectId}/backlog`)}
+        />
       )}
 
       {/* Danger Zone */}
