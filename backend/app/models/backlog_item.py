@@ -1,7 +1,7 @@
 import enum
 from uuid import uuid4
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum, func, JSON
+from sqlalchemy import String, Integer, DateTime, Date, ForeignKey, Enum, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -50,6 +50,8 @@ class BacklogItem(Base):
     assignee_id = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     labels = mapped_column(JSON, default=list, nullable=True)
     acceptance_criteria = mapped_column(JSON, nullable=True)
+    due_date = mapped_column(Date, nullable=True)
+    start_date = mapped_column(Date, nullable=True)
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -57,3 +59,5 @@ class BacklogItem(Base):
     project = relationship("Project", back_populates="backlog_items")
     sprint = relationship("Sprint", back_populates="backlog_items")
     assignee = relationship("User", back_populates="assigned_items", foreign_keys=[assignee_id])
+    attachments = relationship("Attachment", back_populates="backlog_item", cascade="all, delete-orphan")
+    comments = relationship("Comment", back_populates="backlog_item", cascade="all, delete-orphan")

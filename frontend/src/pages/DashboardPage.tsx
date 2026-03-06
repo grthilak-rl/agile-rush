@@ -8,11 +8,12 @@ import {
   Plus,
   TrendingUp,
   TrendingDown,
+  Calendar,
 } from 'lucide-react';
-import { projectsApi, dashboardApi } from '../api/client';
+import { projectsApi, dashboardApi, backlogApi } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
-import type { Project, DashboardStats } from '../types';
+import type { Project, DashboardStats, BacklogItem } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -69,6 +70,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [upcomingItems, setUpcomingItems] = useState<BacklogItem[]>([]);
 
   // Slide panel state
   const [panelOpen, setPanelOpen] = useState(false);
@@ -96,6 +98,17 @@ export default function DashboardPage() {
         if (!cancelled) {
           setProjects(projectsRes.data);
           if (statsRes) setStats(statsRes.data);
+          // Fetch upcoming due items from all projects
+          const upcomingPromises = projectsRes.data.map((p: Project) =>
+            backlogApi.upcoming(p.id).catch(() => ({ data: [] }))
+          );
+          const upcomingResults = await Promise.all(upcomingPromises);
+          const allUpcoming = upcomingResults.flatMap((r) => r.data);
+          allUpcoming.sort((a: BacklogItem, b: BacklogItem) => {
+            if (!a.due_date || !b.due_date) return 0;
+            return a.due_date.localeCompare(b.due_date);
+          });
+          setUpcomingItems(allUpcoming);
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -443,6 +456,87 @@ export default function DashboardPage() {
           </div>
         </>
       )}
+
+      {/* Upcoming Due Dates */}
+      {!loading && upcomingItems.length > 0 && (() => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        const groups: { label: string; color: string; items: BacklogItem[] }[] = [];
+        const overdue: BacklogItem[] = [];
+        const today: BacklogItem[] = [];
+        const thisWeek: BacklogItem[] = [];
+        const nextWeek: BacklogItem[] = [];
+
+        for (const item of upcomingItems) {
+          if (!item.due_date) continue;
+          const due = new Date(item.due_date + 'T00:00:00');
+          const diff = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          if (diff < 0) overdue.push(item);
+          else if (diff === 0) today.push(item);
+          else if (diff <= 7) thisWeek.push(item);
+          else nextWeek.push(item);
+        }
+
+        if (overdue.length > 0) groups.push({ label: 'Overdue', color: '#EF4444', items: overdue });
+        if (today.length > 0) groups.push({ label: 'Today', color: '#F97316', items: today });
+        if (thisWeek.length > 0) groups.push({ label: 'This Week', color: '#2563EB', items: thisWeek });
+        if (nextWeek.length > 0) groups.push({ label: 'Next Week', color: '#64748B', items: nextWeek });
+
+        if (groups.length === 0) return null;
+
+        return (
+          <div style={{ marginTop: 32 }}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Calendar size={20} strokeWidth={2} color="#2563EB" />
+              Upcoming Due Dates
+            </h2>
+            <Card hoverLift={false}>
+              {groups.map((group) => (
+                <div key={group.label} style={{ marginBottom: 16 }}>
+                  <div style={{
+                    fontSize: 12, fontWeight: 700, color: group.color,
+                    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8,
+                  }}>
+                    {group.label}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {group.items.map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => navigate(`/projects/${item.project_id}/backlog`)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 12px', borderRadius: 8,
+                          backgroundColor: '#F8FAFC', cursor: 'pointer',
+                          transition: 'background-color 150ms',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F1F5F9'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontSize: 13, fontWeight: 500, color: '#0F172A',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
+                            {item.title}
+                          </div>
+                        </div>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, color: group.color,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {item.due_date ? new Date(item.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* New Project Slide Panel */}
       <SlidePanel

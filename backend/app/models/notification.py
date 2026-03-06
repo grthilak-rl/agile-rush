@@ -16,6 +16,9 @@ class NotificationType(str, enum.Enum):
     sprint_completed = "sprint_completed"
     mentioned = "mentioned"
     retro_started = "retro_started"
+    due_soon = "due_soon"
+    overdue = "overdue"
+    comment_added = "comment_added"
 
 
 class Notification(Base):

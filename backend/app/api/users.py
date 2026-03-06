@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, Dict
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.security import hash_password, verify_password
-from app.models.user import User
+from app.models.user import User, DEFAULT_EMAIL_NOTIFICATIONS
 from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -21,6 +21,15 @@ class UserProfileUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    item_assigned: Optional[bool] = None
+    mentioned: Optional[bool] = None
+    sprint_events: Optional[bool] = None
+    due_dates: Optional[bool] = None
+    comments: Optional[bool] = None
+    invitations: Optional[bool] = None
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -76,3 +85,29 @@ def change_password(
     current_user.hashed_password = hash_password(data.new_password)
     db.commit()
     return {"message": "Password updated"}
+
+
+@router.get("/me/notification-preferences")
+def get_notification_preferences(
+    current_user: User = Depends(get_current_user),
+):
+    prefs = current_user.email_notifications or DEFAULT_EMAIL_NOTIFICATIONS.copy()
+    return prefs
+
+
+@router.patch("/me/notification-preferences")
+def update_notification_preferences(
+    data: NotificationPreferencesUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    prefs = dict(current_user.email_notifications or DEFAULT_EMAIL_NOTIFICATIONS.copy())
+    update_dict = data.model_dump(exclude_unset=True)
+
+    for key, value in update_dict.items():
+        prefs[key] = value
+
+    current_user.email_notifications = prefs
+    db.commit()
+    db.refresh(current_user)
+    return current_user.email_notifications

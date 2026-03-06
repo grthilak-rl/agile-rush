@@ -464,6 +464,31 @@ def seed():
         items_p2[5].assignee_id = alice.id
         db.flush()
 
+        # ---- Add due dates to ~60% of backlog items ----
+        print("Adding due dates to backlog items...")
+        # 2 overdue items
+        items_p1[0].due_date = today - timedelta(days=2)  # OAuth - overdue
+        items_p1[0].start_date = today - timedelta(days=10)
+        items_p1[2].due_date = today - timedelta(days=1)  # WebSocket bug - overdue
+        # 2 due this week
+        items_p1[1].due_date = today + timedelta(days=2)  # Dashboard analytics - due soon
+        items_p1[1].start_date = today - timedelta(days=3)
+        items_p2[1].due_date = today + timedelta(days=1)  # Appointment scheduling - due tomorrow
+        items_p2[1].start_date = today - timedelta(days=5)
+        # 2 due next week
+        items_p1[4].due_date = today + timedelta(days=8)  # Multi-tenant - next week
+        items_p2[0].due_date = today + timedelta(days=10)  # Patient intake - next week
+        items_p2[0].start_date = today - timedelta(days=2)
+        # Rest spread out or null
+        items_p1[6].due_date = today - timedelta(days=3)  # DB optimization - done, past date
+        items_p2[5].due_date = today + timedelta(days=14)  # Accessibility audit - 2 weeks
+        items_p2[5].start_date = today + timedelta(days=7)
+        items_p1[5].due_date = today + timedelta(days=21)  # Export - 3 weeks
+        items_p2[3].due_date = today + timedelta(days=30)  # Telemedicine - far out
+        # items_p1[3] (rate limiting, done), items_p1[7] (notification), items_p2[2] (dosage, done),
+        # items_p2[4] (EHR), s12/s13 items - all null (no due date)
+        db.flush()
+
         # ---- Notifications ----
         print("Creating sample notifications...")
         import hashlib

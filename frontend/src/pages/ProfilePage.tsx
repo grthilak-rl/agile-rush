@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { User, Lock, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { User, Lock, Save, Bell } from 'lucide-react';
 import { usersApi } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
+import type { NotificationPreferences } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
@@ -42,6 +43,28 @@ export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // Notification preferences
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences | null>(null);
+  const [savingNotifs, setSavingNotifs] = useState(false);
+
+  useEffect(() => {
+    usersApi.getNotificationPreferences().then((res) => setNotifPrefs(res.data)).catch(() => {});
+  }, []);
+
+  const handleSaveNotifPrefs = async () => {
+    if (!notifPrefs) return;
+    setSavingNotifs(true);
+    try {
+      const res = await usersApi.updateNotificationPreferences(notifPrefs);
+      setNotifPrefs(res.data);
+      addToast('success', 'Notification preferences saved');
+    } catch {
+      addToast('error', 'Failed to save notification preferences');
+    } finally {
+      setSavingNotifs(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!fullName.trim()) {
@@ -155,6 +178,66 @@ export default function ProfilePage() {
       <div style={{ marginBottom: 24 }}>
         <ApiKeysPanel />
       </div>
+
+      {/* Notification Preferences */}
+      {notifPrefs && (
+        <Card hoverLift={false} style={{ marginBottom: 24 }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+            <Bell size={18} strokeWidth={2} color="#64748B" />
+            Notification Preferences
+          </h3>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '8px 0', color: '#64748B', fontWeight: 500, fontSize: 12 }}>Category</th>
+                <th style={{ textAlign: 'center', padding: '8px 0', color: '#64748B', fontWeight: 500, fontSize: 12, width: 80 }}>In-App</th>
+                <th style={{ textAlign: 'center', padding: '8px 0', color: '#64748B', fontWeight: 500, fontSize: 12, width: 80 }}>Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([
+                { key: 'item_assigned' as const, label: 'Item assigned to me' },
+                { key: 'mentioned' as const, label: 'Mentioned in a comment' },
+                { key: 'sprint_events' as const, label: 'Sprint events' },
+                { key: 'due_dates' as const, label: 'Due date reminders' },
+                { key: 'comments' as const, label: 'Comments on my items' },
+                { key: 'invitations' as const, label: 'Project invitations' },
+              ]).map((row) => (
+                <tr key={row.key} style={{ borderTop: '1px solid #F1F5F9' }}>
+                  <td style={{ padding: '10px 0', color: '#334155' }}>{row.label}</td>
+                  <td style={{ textAlign: 'center', padding: '10px 0' }}>
+                    <input
+                      type="checkbox"
+                      checked
+                      disabled
+                      style={{ accentColor: '#2563EB', width: 16, height: 16, cursor: 'not-allowed', opacity: 0.5 }}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'center', padding: '10px 0' }}>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs[row.key] ?? true}
+                      onChange={(e) => setNotifPrefs({ ...notifPrefs, [row.key]: e.target.checked })}
+                      style={{ accentColor: '#2563EB', width: 16, height: 16, cursor: 'pointer' }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+            <Button
+              onClick={handleSaveNotifPrefs}
+              loading={savingNotifs}
+              icon={<Save size={16} strokeWidth={2} />}
+            >
+              Save Preferences
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Change Password */}
       <Card hoverLift={false}>

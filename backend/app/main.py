@@ -1,8 +1,10 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -23,6 +25,8 @@ from app.api.search import router as search_router
 from app.api.tasks import router as tasks_router
 from app.api.api_keys import router as api_keys_router
 from app.api.external import router as external_router
+from app.api.attachments import router as attachments_router
+from app.api.comments import router as comments_router
 
 # Import all models so they are registered with Base.metadata
 import app.models  # noqa: F401
@@ -50,6 +54,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount uploads directory for serving uploaded files
+uploads_dir = os.getenv("UPLOAD_DIR", "./uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(projects_router)
@@ -66,6 +75,8 @@ app.include_router(search_router)
 app.include_router(tasks_router)
 app.include_router(api_keys_router)
 app.include_router(external_router)
+app.include_router(attachments_router)
+app.include_router(comments_router)
 
 
 @app.get("/")

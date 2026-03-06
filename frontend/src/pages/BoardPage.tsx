@@ -9,6 +9,13 @@ import {
   BookOpen,
   ListChecks,
   Bug,
+  Calendar,
+  Paperclip,
+  Upload,
+  FileText,
+  MessageSquare,
+  Send,
+  Edit3,
 } from 'lucide-react';
 import {
   DndContext,
@@ -27,10 +34,11 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { createPortal } from 'react-dom';
-import { backlogApi, sprintsApi, membersApi } from '../api/client';
+import { backlogApi, sprintsApi, membersApi, attachmentsApi, commentsApi, activityApi } from '../api/client';
 import { useToast } from '../components/ui/Toast';
+import { useAuth } from '../hooks/useAuth';
 import { useOverlayContainer } from '../contexts/OverlayContainerContext';
-import type { BacklogItem, Sprint, AcceptanceCriteria, ProjectMember } from '../types';
+import type { BacklogItem, Sprint, AcceptanceCriteria, ProjectMember, Attachment, Comment, ActivityLog } from '../types';
 import { Button } from '../components/ui/Button';
 import { Badge, StatusBadge } from '../components/ui/Badge';
 import { PointsBadge } from '../components/ui/PointsBadge';
@@ -104,6 +112,51 @@ function formatDate(dateStr: string): string {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderMentionText(text: string): React.ReactNode {
+  const parts = text.split(/(@\[[^\]]+\]\([^)]+\))/g);
+  return parts.map((part, i) => {
+    const match = part.match(/^@\[([^\]]+)\]\(([^)]+)\)$/);
+    if (match) {
+      return (
+        <span key={i} style={{ color: '#2563EB', fontWeight: 600, backgroundColor: '#EFF6FF', padding: '0 3px', borderRadius: 3 }}>
+          @{match[1]}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+function timeAgo(dateStr: string): string {
+  const now = new Date();
+  const d = new Date(dateStr);
+  const diff = Math.floor((now.getTime() - d.getTime()) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function getDueDateInfo(dueDate: string | null | undefined, status: string): { label: string; color: string; bg: string } | null {
+  if (!dueDate) return null;
+  if (status === 'done') return { label: formatDate(dueDate), color: '#10B981', bg: '#ECFDF5' };
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate + 'T00:00:00');
+  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return { label: 'Overdue', color: '#EF4444', bg: '#FEF2F2' };
+  if (diffDays === 0) return { label: 'Due today', color: '#F97316', bg: '#FFF7ED' };
+  if (diffDays <= 2) return { label: `Due in ${diffDays}d`, color: '#F97316', bg: '#FFF7ED' };
+  return { label: formatDate(dueDate), color: '#64748B', bg: '#F1F5F9' };
 }
 
 const BOARD_COLUMNS = [
@@ -234,6 +287,33 @@ function SortableBoardCard({
                 <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, backgroundColor: columnColor, transition: 'width 200ms ease' }} />
               </div>
               <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600, whiteSpace: 'nowrap' }}>{checked}/{total}</span>
+            </div>
+          );
+        })()}
+
+        {/* Due date badge */}
+        {(() => {
+          const info = getDueDateInfo(item.due_date, item.status);
+          if (!info) return null;
+          return (
+            <div style={{ marginBottom: 8 }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: info.color,
+                  backgroundColor: info.bg,
+                  textDecoration: item.status === 'done' ? 'line-through' : 'none',
+                }}
+              >
+                <Calendar size={10} strokeWidth={2.5} />
+                {info.label}
+              </span>
             </div>
           );
         })()}
@@ -548,6 +628,7 @@ export default function BoardPage() {
   const [formLabelInput, setFormLabelInput] = useState('');
   const [formCriteria, setFormCriteria] = useState<AcceptanceCriteria[]>([]);
   const [formAssigneeId, setFormAssigneeId] = useState<string | null>(null);
+  const [formDueDate, setFormDueDate] = useState<string>('');
 
   // Team members for assignee dropdown
   const [members, setMembers] = useState<ProjectMember[]>([]);
@@ -556,6 +637,30 @@ export default function BoardPage() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFadeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>('');
+
+  // -------------------------------------------------------------------------
+  // Attachments
+  // -------------------------------------------------------------------------
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // -------------------------------------------------------------------------
+  // Comments & Activity
+  // -------------------------------------------------------------------------
+  const { user: currentUser } = useAuth();
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState('');
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionResults, setMentionResults] = useState<{ id: string; full_name: string }[]>([]);
+  const [mentionCursorPos, setMentionCursorPos] = useState(0);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   // -------------------------------------------------------------------------
   // Complete sprint modal state
@@ -753,6 +858,7 @@ export default function BoardPage() {
         : []
     );
     setFormAssigneeId(item.assignee_id || null);
+    setFormDueDate(item.due_date || '');
     setSaveStatus('idle');
 
     lastSavedRef.current = JSON.stringify({
@@ -761,6 +867,7 @@ export default function BoardPage() {
       formDescription: item.description || '', formLabels: [...item.labels],
       formCriteria: item.acceptance_criteria ? item.acceptance_criteria.map((c) => ({ ...c })) : [],
       formAssigneeId: item.assignee_id || null,
+      formDueDate: item.due_date || '',
     });
   }, []);
 
@@ -804,6 +911,7 @@ export default function BoardPage() {
           labels: formLabels,
           acceptance_criteria: formCriteria,
           assignee_id: formAssigneeId,
+          due_date: formDueDate || null,
         };
         const res = await backlogApi.update(projectId, editingItem.id, payload);
         setItems((prev) =>
@@ -820,6 +928,7 @@ export default function BoardPage() {
     editingItem, projectId,
     formTitle, formType, formPriority, formStatus,
     formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
+    formDueDate,
   ]);
 
   useEffect(() => {
@@ -827,6 +936,7 @@ export default function BoardPage() {
     const snapshot = JSON.stringify({
       formTitle, formType, formPriority, formStatus,
       formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
+      formDueDate,
     });
     if (snapshot === lastSavedRef.current) return;
     lastSavedRef.current = snapshot;
@@ -835,6 +945,7 @@ export default function BoardPage() {
   }, [
     formTitle, formType, formPriority, formStatus,
     formPoints, formSprintId, formDescription, formLabels, formCriteria, formAssigneeId,
+    formDueDate,
   ]);
 
   // -------------------------------------------------------------------------
@@ -887,6 +998,112 @@ export default function BoardPage() {
   const removeCriterion = useCallback((index: number) => {
     setFormCriteria((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  // -------------------------------------------------------------------------
+  // Load attachments, comments, activity when item opens
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!editingItem || !projectId) return;
+    attachmentsApi.list(projectId, editingItem.id).then((res) => setAttachments(res.data)).catch(() => {});
+    commentsApi.list(projectId, editingItem.id, { limit: 100 }).then((res) => setComments(res.data)).catch(() => {});
+    activityApi.list(projectId, { limit: 50 }).then((res) => {
+      setActivities(res.data.filter((a) => a.entity_id === editingItem.id));
+    }).catch(() => {});
+  }, [editingItem, projectId]);
+
+  // -------------------------------------------------------------------------
+  // Attachment handlers
+  // -------------------------------------------------------------------------
+  const handleFileUpload = useCallback(async (files: FileList | null) => {
+    if (!files || !projectId || !editingItem) return;
+    const file = files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { addToast('error', 'File exceeds 10MB limit'); return; }
+    setUploading(true); setUploadProgress(0);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await attachmentsApi.upload(projectId, editingItem.id, formData, (e) => {
+        if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      });
+      setAttachments((prev) => [res.data, ...prev]);
+      addToast('success', 'File uploaded');
+    } catch { addToast('error', 'Failed to upload file'); }
+    finally { setUploading(false); setUploadProgress(0); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  }, [projectId, editingItem, addToast]);
+
+  const handleDeleteAttachment = useCallback(async (attachmentId: string) => {
+    if (!projectId || !editingItem) return;
+    try {
+      await attachmentsApi.delete(projectId, editingItem.id, attachmentId);
+      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+      addToast('success', 'Attachment deleted');
+    } catch { addToast('error', 'Failed to delete attachment'); }
+  }, [projectId, editingItem, addToast]);
+
+  // -------------------------------------------------------------------------
+  // Comment handlers
+  // -------------------------------------------------------------------------
+  const handleSubmitComment = useCallback(async () => {
+    if (!projectId || !editingItem || !commentText.trim()) return;
+    setSubmittingComment(true);
+    try {
+      const res = await commentsApi.create(projectId, editingItem.id, { content: commentText.trim() });
+      setComments((prev) => [...prev, res.data]);
+      setCommentText('');
+    } catch { addToast('error', 'Failed to add comment'); }
+    finally { setSubmittingComment(false); }
+  }, [projectId, editingItem, commentText, addToast]);
+
+  const handleUpdateComment = useCallback(async (commentId: string) => {
+    if (!projectId || !editingItem || !editCommentText.trim()) return;
+    try {
+      const res = await commentsApi.update(projectId, editingItem.id, commentId, { content: editCommentText.trim() });
+      setComments((prev) => prev.map((c) => (c.id === commentId ? res.data : c)));
+      setEditingCommentId(null); setEditCommentText('');
+    } catch { addToast('error', 'Failed to update comment'); }
+  }, [projectId, editingItem, editCommentText, addToast]);
+
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    if (!projectId || !editingItem) return;
+    try {
+      await commentsApi.delete(projectId, editingItem.id, commentId);
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+    } catch { addToast('error', 'Failed to delete comment'); }
+  }, [projectId, editingItem, addToast]);
+
+  useEffect(() => {
+    if (mentionQuery === null || !projectId) { setMentionResults([]); return; }
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await membersApi.search(projectId, mentionQuery);
+        setMentionResults(res.data.map((m) => ({ id: m.user_id, full_name: m.full_name })));
+      } catch { setMentionResults([]); }
+    }, 200);
+    return () => clearTimeout(timeout);
+  }, [mentionQuery, projectId]);
+
+  const handleCommentInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setCommentText(val);
+    const cursor = e.target.selectionStart;
+    setMentionCursorPos(cursor);
+    const textBefore = val.slice(0, cursor);
+    const match = textBefore.match(/@(\w*)$/);
+    if (match) setMentionQuery(match[1]);
+    else setMentionQuery(null);
+  }, []);
+
+  const insertMention = useCallback((user: { id: string; full_name: string }) => {
+    const textBefore = commentText.slice(0, mentionCursorPos);
+    const textAfter = commentText.slice(mentionCursorPos);
+    const atIdx = textBefore.lastIndexOf('@');
+    const mention = `@[${user.full_name}](${user.id})`;
+    const newText = textBefore.slice(0, atIdx) + mention + ' ' + textAfter;
+    setCommentText(newText);
+    setMentionQuery(null); setMentionResults([]);
+    commentInputRef.current?.focus();
+  }, [commentText, mentionCursorPos]);
 
   // -------------------------------------------------------------------------
   // Complete sprint
@@ -1056,6 +1273,31 @@ export default function BoardPage() {
               </select>
             </div>
 
+            {/* Due Date */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{ width: 100, fontSize: 13, fontWeight: 500, color: '#64748B', flexShrink: 0 }}>Due Date</label>
+              <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={formDueDate}
+                  onChange={(e) => setFormDueDate(e.target.value)}
+                  style={fieldStyle}
+                />
+                {formDueDate && (
+                  <button
+                    onClick={() => setFormDueDate('')}
+                    style={{
+                      padding: 4, color: '#94A3B8', cursor: 'pointer',
+                      border: 'none', backgroundColor: 'transparent', flexShrink: 0, display: 'flex',
+                    }}
+                    title="Clear due date"
+                  >
+                    <X size={14} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Story Points */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <label style={{ width: 100, fontSize: 13, fontWeight: 500, color: '#64748B', flexShrink: 0, paddingTop: 6 }}>Story Points</label>
@@ -1209,6 +1451,224 @@ export default function BoardPage() {
               />
             </div>
           )}
+
+          {/* Section: Attachments */}
+          <div style={{ marginTop: 20 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: '#64748B', marginBottom: 8 }}>
+              <Paperclip size={14} strokeWidth={2} />
+              Attachments
+              {attachments.length > 0 && <span style={{ fontSize: 11, color: '#94A3B8' }}>({attachments.length})</span>}
+            </label>
+            <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', fontSize: 13, fontWeight: 500,
+                color: '#2563EB', backgroundColor: 'transparent',
+                border: '1px dashed #CBD5E1', borderRadius: 8,
+                cursor: 'pointer', width: '100%', justifyContent: 'center',
+                transition: 'all 150ms', marginBottom: 8,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#EFF6FF'; e.currentTarget.style.borderColor = '#2563EB'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.borderColor = '#CBD5E1'; }}
+            >
+              <Upload size={14} strokeWidth={2} />
+              {uploading ? `Uploading ${uploadProgress}%` : 'Upload file'}
+            </button>
+            {uploading && (
+              <div style={{ height: 3, borderRadius: 999, backgroundColor: '#E2E8F0', overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: '#2563EB', transition: 'width 200ms' }} />
+              </div>
+            )}
+            {attachments.map((att, idx) => {
+              const isImage = att.mime_type.startsWith('image/');
+              return (
+                <div key={att.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 8px', borderRadius: 6, backgroundColor: '#F8FAFC', marginBottom: 4,
+                  cursor: isImage ? 'pointer' : 'default',
+                }} onClick={isImage ? () => setLightboxIdx(idx) : undefined}>
+                  {att.thumbnail_url ? (
+                    <img src={att.thumbnail_url} alt={att.filename} style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+                  ) : (
+                    <div style={{ width: 32, height: 32, borderRadius: 4, backgroundColor: '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <FileText size={16} color="#64748B" />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.filename}</div>
+                    <div style={{ fontSize: 11, color: '#94A3B8' }}>{formatFileSize(att.file_size)}</div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteAttachment(att.id); }}
+                    style={{ padding: 4, color: '#94A3B8', cursor: 'pointer', border: 'none', backgroundColor: 'transparent', flexShrink: 0, display: 'flex', transition: 'color 150ms' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#EF4444'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#94A3B8'; }}
+                    title="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Image Lightbox */}
+          {lightboxIdx !== null && (() => {
+            const att = attachments[lightboxIdx];
+            if (!att) return null;
+            return (
+              <div onClick={() => setLightboxIdx(null)} style={{
+                position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)',
+                zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              }}>
+                <img src={att.download_url} alt={att.filename} style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, objectFit: 'contain' }} onClick={(e) => e.stopPropagation()} />
+                <button onClick={() => setLightboxIdx(null)} style={{ position: 'absolute', top: 16, right: 16, padding: 8, color: '#FFFFFF', cursor: 'pointer', border: 'none', backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 8 }}>
+                  <X size={20} />
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Section: Activity & Comments */}
+          <div style={{ marginTop: 24 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: '#64748B', marginBottom: 12 }}>
+              <MessageSquare size={14} strokeWidth={2} />
+              Activity & Comments
+            </label>
+
+            {/* Comment input */}
+            <div style={{ marginBottom: 16, position: 'relative' }}>
+              <textarea
+                ref={commentInputRef}
+                value={commentText}
+                onChange={handleCommentInput}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitComment(); }
+                }}
+                placeholder="Add a comment... Use @ to mention"
+                rows={2}
+                style={{ ...fieldStyle, minHeight: 56, resize: 'none', fontFamily: 'inherit', lineHeight: '20px' }}
+              />
+              {mentionQuery !== null && mentionResults.length > 0 && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', left: 0, right: 0,
+                  backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0',
+                  borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  maxHeight: 160, overflow: 'auto', zIndex: 10, marginBottom: 4,
+                }}>
+                  {mentionResults.map((u) => (
+                    <button key={u.id} onClick={() => insertMention(u)} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', width: '100%',
+                      border: 'none', backgroundColor: 'transparent', cursor: 'pointer', fontSize: 13, color: '#0F172A', textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F1F5F9'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <Avatar name={u.full_name} size={24} />
+                      {u.full_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+                <button
+                  onClick={handleSubmitComment}
+                  disabled={!commentText.trim() || submittingComment}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '5px 12px', borderRadius: 6,
+                    backgroundColor: commentText.trim() ? '#2563EB' : '#E2E8F0',
+                    color: commentText.trim() ? '#FFFFFF' : '#94A3B8',
+                    border: 'none', cursor: commentText.trim() ? 'pointer' : 'default',
+                    fontSize: 12, fontWeight: 600,
+                  }}
+                >
+                  <Send size={12} />
+                  {submittingComment ? 'Sending...' : 'Comment'}
+                </button>
+              </div>
+            </div>
+
+            {/* Timeline */}
+            {(() => {
+              type TimelineEntry = { type: 'activity'; data: ActivityLog; ts: string } | { type: 'comment'; data: Comment; ts: string };
+              const timeline: TimelineEntry[] = [
+                ...activities.map((a) => ({ type: 'activity' as const, data: a, ts: a.created_at })),
+                ...comments.map((c) => ({ type: 'comment' as const, data: c, ts: c.created_at })),
+              ];
+              timeline.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+              if (timeline.length === 0) {
+                return <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13, padding: '16px 0' }}>No activity yet</div>;
+              }
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {timeline.map((entry) => {
+                    if (entry.type === 'activity') {
+                      const act = entry.data;
+                      const details = act.details as Record<string, string>;
+                      return (
+                        <div key={`a-${act.id}`} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 12, color: '#64748B' }}>
+                          <Avatar name={act.user?.full_name || '?'} size={20} />
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 600, color: '#334155' }}>{act.user?.full_name}</span>
+                            {' '}{act.action} {details?.title ? `"${details.title}"` : ''}
+                            {details?.filename ? ` - ${details.filename}` : ''}
+                            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{timeAgo(act.created_at)}</div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    const c = entry.data;
+                    const isAuthor = currentUser?.id === c.author_id;
+                    const isEditingThis = editingCommentId === c.id;
+                    return (
+                      <div key={`c-${c.id}`} style={{ padding: '8px 10px', borderRadius: 8, backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Avatar name={c.author?.full_name || '?'} size={20} />
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{c.author?.full_name}</span>
+                            <span style={{ fontSize: 11, color: '#94A3B8' }}>{timeAgo(c.created_at)}</span>
+                            {c.edited_at && <span style={{ fontSize: 10, color: '#CBD5E1' }}>(edited)</span>}
+                          </div>
+                          {isAuthor && !isEditingThis && (
+                            <div style={{ display: 'flex', gap: 2 }}>
+                              <button onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.content); }} style={{ padding: 3, border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#94A3B8', display: 'flex' }} title="Edit">
+                                <Edit3 size={12} />
+                              </button>
+                              <button onClick={() => handleDeleteComment(c.id)} style={{ padding: 3, border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#94A3B8', display: 'flex' }} title="Delete">
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {isEditingThis ? (
+                          <div>
+                            <textarea value={editCommentText} onChange={(e) => setEditCommentText(e.target.value)}
+                              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleUpdateComment(c.id); } if (e.key === 'Escape') { setEditingCommentId(null); } }}
+                              rows={2} style={{ ...fieldStyle, minHeight: 40, resize: 'none', fontFamily: 'inherit', fontSize: 13 }} autoFocus
+                            />
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
+                              <button onClick={() => { setEditingCommentId(null); }} style={{ padding: '3px 8px', fontSize: 11, border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#64748B' }}>Cancel</button>
+                              <button onClick={() => handleUpdateComment(c.id)} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, border: 'none', backgroundColor: '#2563EB', color: '#FFFFFF', borderRadius: 4, cursor: 'pointer' }}>Save</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 13, color: '#334155', lineHeight: '20px', whiteSpace: 'pre-wrap' }}>
+                            {renderMentionText(c.content)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
         {/* Panel Footer */}

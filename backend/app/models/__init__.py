@@ -8,6 +8,8 @@ from app.models.daily_snapshot import DailySnapshot
 from app.models.project_member import ProjectMember, MemberRole, MemberStatus
 from app.models.notification import Notification, NotificationType
 from app.models.api_key import ApiKey
+from app.models.attachment import Attachment
+from app.models.comment import Comment
 
 __all__ = [
     "User",
@@ -31,4 +33,6 @@ __all__ = [
     "Notification",
     "NotificationType",
     "ApiKey",
+    "Attachment",
+    "Comment",
 ]

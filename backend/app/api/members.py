@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.core.dependencies import get_current_user
@@ -52,6 +53,56 @@ def _member_response(member: ProjectMember) -> dict:
         "joined_at": member.joined_at.isoformat() if member.joined_at else None,
         "user": user_data,
     }
+
+
+@router.get("/{project_id}/members/search")
+def search_members(
+    project_id: str,
+    q: str = Query("", min_length=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search active project members by name or email for @mention autocomplete."""
+    get_project_with_access(project_id, current_user, db, "viewer")
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        return []
+
+    # Get all active member user IDs + owner
+    member_user_ids = set()
+    member_user_ids.add(project.owner_id)
+
+    members = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.status == MemberStatus.active,
+        ProjectMember.user_id.isnot(None),
+    ).all()
+    for m in members:
+        member_user_ids.add(m.user_id)
+
+    # Search users in this set
+    query = db.query(User).filter(User.id.in_(member_user_ids))
+
+    if q:
+        search_term = f"%{q}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(search_term),
+                User.email.ilike(search_term),
+            )
+        )
+
+    users = query.limit(5).all()
+    return [
+        {
+            "id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "avatar_url": u.avatar_url,
+        }
+        for u in users
+    ]
 
 
 @router.get("/{project_id}/members")

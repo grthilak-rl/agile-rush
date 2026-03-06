@@ -23,11 +23,20 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - uploads_data:/app/uploads
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-agilerush}:${POSTGRES_PASSWORD:-agilerush_secret}@db:5432/${POSTGRES_DB:-agilerush}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-key-not-for-production}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-noreply@agilerush.com}
+      APP_URL: ${APP_URL:-http://localhost:5173}
+      UPLOAD_DIR: /app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -35,3 +44,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

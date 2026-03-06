@@ -37,6 +37,9 @@ export interface BacklogItem {
   assignee: User | null;
   labels: string[];
   acceptance_criteria: AcceptanceCriteria[];
+  due_date: string | null;
+  start_date: string | null;
+  is_overdue: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -279,6 +282,54 @@ export interface ApiKeyItem {
   key_prefix: string;
   last_used_at: string | null;
   created_at: string | null;
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  file_size: number;
+  mime_type: string;
+  thumbnail_url: string | null;
+  download_url: string;
+  uploaded_by: {
+    id: string;
+    full_name: string;
+    avatar_url: string | null;
+  } | null;
+  created_at: string;
+}
+
+export interface Comment {
+  id: string;
+  backlog_item_id: string;
+  project_id: string;
+  author_id: string;
+  author: {
+    id: string;
+    full_name: string;
+    avatar_url: string | null;
+  } | null;
+  content: string;
+  mentions: string[];
+  edited_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemberSearchResult {
+  id: string;
+  full_name: string;
+  email: string;
+  avatar_url: string | null;
+}
+
+export interface NotificationPreferences {
+  item_assigned: boolean;
+  mentioned: boolean;
+  sprint_events: boolean;
+  due_dates: boolean;
+  comments: boolean;
+  invitations: boolean;
 }
 
 export interface SprintSummary {

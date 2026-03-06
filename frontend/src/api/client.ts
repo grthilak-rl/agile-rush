@@ -20,9 +20,13 @@ import type {
   SearchResults,
   MyTasksResponse,
   ApiKeyItem,
+  Attachment,
+  Comment,
+  MemberSearchResult,
+  NotificationPreferences,
 } from '../types';
 
-// In dev, Vite proxy forwards /api → http://localhost:8000
+// In dev, Vite proxy forwards /api -> http://localhost:8000
 // In prod, set VITE_API_URL to the full backend URL
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -107,6 +111,8 @@ export const backlogApi = {
     projectId: string,
     items: { id: string; position: number; sprint_id?: string | null }[]
   ) => api.patch(`/projects/${projectId}/backlog/reorder`, { items }),
+  upcoming: (projectId: string) =>
+    api.get<BacklogItem[]>(`/projects/${projectId}/backlog/upcoming`),
 };
 
 // Sprints
@@ -182,12 +188,18 @@ export const usersApi = {
     api.patch<User>('/users/me', data),
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.patch('/users/me/password', data),
+  getNotificationPreferences: () =>
+    api.get<NotificationPreferences>('/users/me/notification-preferences'),
+  updateNotificationPreferences: (data: Partial<NotificationPreferences>) =>
+    api.patch<NotificationPreferences>('/users/me/notification-preferences', data),
 };
 
 // Members
 export const membersApi = {
   list: (projectId: string) =>
     api.get<ProjectMember[]>(`/projects/${projectId}/members`),
+  search: (projectId: string, q: string) =>
+    api.get<MemberSearchResult[]>(`/projects/${projectId}/members/search`, { params: { q } }),
   invite: (projectId: string, data: { email: string; role?: string }) =>
     api.post(`/projects/${projectId}/members/invite`, data),
   accept: (projectId: string) =>
@@ -227,6 +239,31 @@ export const apiKeysApi = {
   list: () => api.get<ApiKeyItem[]>('/settings/api-keys'),
   create: (data: { name: string }) => api.post<ApiKeyItem>('/settings/api-keys', data),
   revoke: (id: string) => api.delete(`/settings/api-keys/${id}`),
+};
+
+// Attachments
+export const attachmentsApi = {
+  list: (projectId: string, itemId: string) =>
+    api.get<Attachment[]>(`/projects/${projectId}/backlog/${itemId}/attachments`),
+  upload: (projectId: string, itemId: string, formData: FormData, onUploadProgress?: (e: { loaded: number; total?: number }) => void) =>
+    api.post<Attachment>(`/projects/${projectId}/backlog/${itemId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    }),
+  delete: (projectId: string, itemId: string, attachmentId: string) =>
+    api.delete(`/projects/${projectId}/backlog/${itemId}/attachments/${attachmentId}`),
+};
+
+// Comments
+export const commentsApi = {
+  list: (projectId: string, itemId: string, params?: { limit?: number; offset?: number }) =>
+    api.get<Comment[]>(`/projects/${projectId}/backlog/${itemId}/comments`, { params }),
+  create: (projectId: string, itemId: string, data: { content: string }) =>
+    api.post<Comment>(`/projects/${projectId}/backlog/${itemId}/comments`, data),
+  update: (projectId: string, itemId: string, commentId: string, data: { content: string }) =>
+    api.patch<Comment>(`/projects/${projectId}/backlog/${itemId}/comments/${commentId}`, data),
+  delete: (projectId: string, itemId: string, commentId: string) =>
+    api.delete(`/projects/${projectId}/backlog/${itemId}/comments/${commentId}`),
 };
 
 export default api;

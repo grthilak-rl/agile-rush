@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,7 +12,7 @@ from app.core.notifications import create_notification
 from app.models.user import User
 from app.models.backlog_item import BacklogItem, ItemType, Priority, ItemStatus
 from app.models.activity_log import ActivityLog, ActionType, EntityType
-from app.models.notification import NotificationType
+from app.models.notification import Notification, NotificationType
 from app.schemas.backlog_item import (
     BacklogItemCreate,
     BacklogItemUpdate,
@@ -43,6 +44,52 @@ def create_activity(
     db.add(log)
 
 
+def check_due_date_notifications(db: Session, item: BacklogItem):
+    """Check and create due date notifications if needed."""
+    if not item.due_date or not item.assignee_id or item.status == ItemStatus.done:
+        return
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    if item.due_date == tomorrow:
+        # Due tomorrow - check for duplicate
+        existing = db.query(Notification).filter(
+            Notification.entity_id == item.id,
+            Notification.type == NotificationType.due_soon.value,
+            Notification.user_id == item.assignee_id,
+        ).first()
+        if not existing:
+            create_notification(
+                db=db,
+                user_id=item.assignee_id,
+                type=NotificationType.due_soon,
+                title="Due Tomorrow",
+                message=f"'{item.title}' is due tomorrow",
+                project_id=item.project_id,
+                entity_type="backlog_item",
+                entity_id=item.id,
+            )
+    elif item.due_date < today:
+        # Overdue - check for duplicate
+        existing = db.query(Notification).filter(
+            Notification.entity_id == item.id,
+            Notification.type == NotificationType.overdue.value,
+            Notification.user_id == item.assignee_id,
+        ).first()
+        if not existing:
+            create_notification(
+                db=db,
+                user_id=item.assignee_id,
+                type=NotificationType.overdue,
+                title="Item Overdue",
+                message=f"'{item.title}' is overdue",
+                project_id=item.project_id,
+                entity_type="backlog_item",
+                entity_id=item.id,
+            )
+
+
 @router.get("/{project_id}/backlog", response_model=List[BacklogItemResponse])
 def list_backlog_items(
     project_id: str,
@@ -51,6 +98,7 @@ def list_backlog_items(
     status: Optional[str] = Query(None, alias="status"),
     sprint_id: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    overdue: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -72,8 +120,46 @@ def list_backlog_items(
         query = query.filter(BacklogItem.sprint_id == sprint_id)
     if search is not None:
         query = query.filter(BacklogItem.title.ilike(f"%{search}%"))
+    if overdue:
+        today = date.today()
+        query = query.filter(
+            BacklogItem.due_date < today,
+            BacklogItem.status != ItemStatus.done,
+        )
 
     items = query.order_by(BacklogItem.position).all()
+
+    # Check due date notifications for items with due dates
+    for item in items:
+        check_due_date_notifications(db, item)
+    db.commit()
+
+    return [BacklogItemResponse.model_validate(item) for item in items]
+
+
+@router.get("/{project_id}/backlog/upcoming", response_model=List[BacklogItemResponse])
+def list_upcoming_items(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_project_with_access(project_id, current_user, db, "viewer")
+
+    today = date.today()
+    next_week = today + timedelta(days=7)
+
+    items = (
+        db.query(BacklogItem)
+        .options(joinedload(BacklogItem.assignee))
+        .filter(
+            BacklogItem.project_id == project_id,
+            BacklogItem.due_date.isnot(None),
+            BacklogItem.due_date <= next_week,
+            BacklogItem.status != ItemStatus.done,
+        )
+        .order_by(BacklogItem.due_date.asc())
+        .all()
+    )
     return [BacklogItemResponse.model_validate(item) for item in items]
 
 
@@ -103,6 +189,8 @@ def create_backlog_item(
         assignee_id=item_data.assignee_id,
         labels=item_data.labels or [],
         acceptance_criteria=item_data.acceptance_criteria,
+        due_date=item_data.due_date,
+        start_date=item_data.start_date,
     )
     db.add(item)
     db.flush()
@@ -329,6 +417,10 @@ def update_backlog_item(
 
     db.commit()
     db.refresh(item)
+
+    # Check due date notifications after update
+    check_due_date_notifications(db, item)
+    db.commit()
 
     loaded_item = (
         db.query(BacklogItem)
