@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -22,6 +22,8 @@ import {
   MessageSquare,
   Edit3,
   MoreHorizontal,
+  List,
+  Table2,
 } from 'lucide-react';
 import {
   DndContext,
@@ -56,6 +58,7 @@ import { SlidePanel } from '../components/ui/SlidePanel';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { BacklogItemSkeleton } from '../components/ui/Skeleton';
+import { BacklogTableView } from '../components/BacklogTableView';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -425,6 +428,11 @@ export default function BacklogPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // View mode (list or table)
+  const [viewMode, setViewMode] = useState<'list' | 'table'>(() => {
+    return (localStorage.getItem(`agilerush_backlog_view_${projectId}`) as 'list' | 'table') || 'list';
+  });
+
   // Section collapse
   const [sprintCollapsed, setSprintCollapsed] = useState(false);
   const [backlogCollapsed, setBacklogCollapsed] = useState(false);
@@ -711,6 +719,20 @@ export default function BacklogPage() {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
   }, [searchInput]);
+
+  // Persist view mode
+  const handleViewModeChange = useCallback((mode: 'list' | 'table') => {
+    setViewMode(mode);
+    localStorage.setItem(`agilerush_backlog_view_${projectId}`, mode);
+  }, [projectId]);
+
+  // Members list for table view
+  const tableMembersList = useMemo(() =>
+    members
+      .filter((m) => m.status === 'active' && m.user)
+      .map((m) => ({ id: m.user.id, full_name: m.user.full_name })),
+    [members]
+  );
 
   // -----------------------------------------------------------------------
   // Filtering
@@ -2380,6 +2402,38 @@ export default function BacklogPage() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* View mode toggle */}
+          <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+            <button
+              onClick={() => handleViewModeChange('list')}
+              title="List view"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '6px 10px', border: 'none', cursor: 'pointer',
+                backgroundColor: viewMode === 'list' ? '#2563EB' : '#F1F5F9',
+                color: viewMode === 'list' ? '#FFFFFF' : '#64748B',
+                transition: 'all 150ms ease',
+              }}
+              aria-label="List view"
+            >
+              <List size={16} strokeWidth={2} />
+            </button>
+            <button
+              onClick={() => handleViewModeChange('table')}
+              title="Table view"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '6px 10px', border: 'none', cursor: 'pointer',
+                backgroundColor: viewMode === 'table' ? '#2563EB' : '#F1F5F9',
+                color: viewMode === 'table' ? '#FFFFFF' : '#64748B',
+                transition: 'all 150ms ease',
+              }}
+              aria-label="Table view"
+            >
+              <Table2 size={16} strokeWidth={2} />
+            </button>
+          </div>
+
           <PresenceAvatars
             onlineMembers={onlineMembers}
             currentUserId={currentUser?.id || ''}
@@ -2519,6 +2573,15 @@ export default function BacklogPage() {
             onClick: openCreatePanel,
             icon: <Plus size={16} strokeWidth={2} />,
           }}
+        />
+      ) : viewMode === 'table' ? (
+        <BacklogTableView
+          items={filteredItems}
+          sprints={sprints}
+          members={tableMembersList}
+          projectId={projectId || ''}
+          onItemClick={(item) => openEditPanel(item)}
+          onItemsChanged={loadData}
         />
       ) : (
         <DndContext

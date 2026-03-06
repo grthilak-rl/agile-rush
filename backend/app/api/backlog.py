@@ -321,6 +321,130 @@ def bulk_move_items(
     return {"moved": moved}
 
 
+@router.post("/{project_id}/backlog/bulk-update")
+def bulk_update_items(
+    project_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_project_with_access(project_id, current_user, db, "member")
+
+    item_ids = data.get("item_ids", [])
+    changes = data.get("changes", {})
+    if not item_ids or not changes:
+        return {"updated": 0}
+
+    updated = 0
+    needs_snapshot = False
+    for item_id in item_ids:
+        item = db.query(BacklogItem).filter(
+            BacklogItem.id == item_id,
+            BacklogItem.project_id == project_id,
+        ).first()
+        if not item:
+            continue
+        old_status = item.status
+        for key, value in changes.items():
+            if hasattr(item, key):
+                setattr(item, key, value)
+        # Activity log for each item
+        details = {"title": item.title}
+        if "status" in changes and changes["status"] != old_status:
+            action = ActionType.completed if changes["status"] == "done" else ActionType.moved
+            details["from_status"] = old_status
+            details["to_status"] = changes["status"]
+        else:
+            action = ActionType.updated
+            details["fields"] = list(changes.keys())
+        create_activity(
+            db=db,
+            project_id=project_id,
+            user_id=current_user.id,
+            action=action,
+            entity_type=EntityType.backlog_item,
+            entity_id=item.id,
+            details=details,
+        )
+        if "status" in changes or "story_points" in changes or "sprint_id" in changes:
+            needs_snapshot = True
+        updated += 1
+
+    if needs_snapshot:
+        maybe_snapshot_active_sprint(db, project_id)
+
+    db.commit()
+
+    # Broadcast events for each updated item
+    for item_id in item_ids:
+        broadcast_event(project_id, {
+            "type": "item:updated",
+            "data": {
+                "item_id": str(item_id),
+                "changes": changes,
+                "updated_by": str(current_user.id),
+                "updated_by_name": current_user.full_name,
+            }
+        })
+
+    return {"updated": updated}
+
+
+@router.delete("/{project_id}/backlog/bulk-delete")
+def bulk_delete_items(
+    project_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project, user_role = get_project_with_access(project_id, current_user, db, "admin")
+
+    item_ids = data.get("item_ids", [])
+    if not item_ids:
+        return {"deleted": 0}
+
+    deleted = 0
+    needs_snapshot = False
+    for item_id in item_ids:
+        item = db.query(BacklogItem).filter(
+            BacklogItem.id == item_id,
+            BacklogItem.project_id == project_id,
+        ).first()
+        if not item:
+            continue
+        create_activity(
+            db=db,
+            project_id=project_id,
+            user_id=current_user.id,
+            action=ActionType.deleted,
+            entity_type=EntityType.backlog_item,
+            entity_id=item.id,
+            details={"title": item.title},
+        )
+        if item.sprint_id:
+            needs_snapshot = True
+        db.delete(item)
+        deleted += 1
+
+    if needs_snapshot:
+        maybe_snapshot_active_sprint(db, project_id)
+
+    db.commit()
+
+    # Broadcast deletion events
+    for item_id in item_ids:
+        broadcast_event(project_id, {
+            "type": "item:deleted",
+            "data": {
+                "item_id": str(item_id),
+                "deleted_by": str(current_user.id),
+                "deleted_by_name": current_user.full_name,
+            }
+        })
+
+    return {"deleted": deleted}
+
+
 @router.get("/{project_id}/backlog/{item_id}", response_model=BacklogItemResponse)
 def get_backlog_item(
     project_id: str,

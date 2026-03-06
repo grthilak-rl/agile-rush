@@ -113,6 +113,10 @@ export const backlogApi = {
   ) => api.patch(`/projects/${projectId}/backlog/reorder`, { items }),
   upcoming: (projectId: string) =>
     api.get<BacklogItem[]>(`/projects/${projectId}/backlog/upcoming`),
+  bulkUpdate: (projectId: string, data: { item_ids: string[]; changes: Record<string, unknown> }) =>
+    api.post<{ updated: number }>(`/projects/${projectId}/backlog/bulk-update`, data),
+  bulkDelete: (projectId: string, data: { item_ids: string[] }) =>
+    api.delete<{ deleted: number }>(`/projects/${projectId}/backlog/bulk-delete`, { data }),
 };
 
 // Sprints
@@ -265,5 +269,39 @@ export const commentsApi = {
   delete: (projectId: string, itemId: string, commentId: string) =>
     api.delete(`/projects/${projectId}/backlog/${itemId}/comments/${commentId}`),
 };
+
+// Calendar
+export const calendarApi = {
+  get: (projectId: string, start: string, end: string) =>
+    api.get<CalendarResponse>(`/projects/${projectId}/calendar`, { params: { start, end } }),
+};
+
+export interface CalendarItemData {
+  id: string;
+  title: string;
+  due_date: string | null;
+  start_date: string | null;
+  type: 'story' | 'task' | 'bug';
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  status: string;
+  story_points: number | null;
+  assignee: { id: string; full_name: string; avatar_url: string | null } | null;
+  sprint: { id: string; name: string } | null;
+  labels: string[];
+  is_overdue: boolean;
+}
+
+export interface CalendarSprintData {
+  id: string;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+}
+
+export interface CalendarResponse {
+  items: CalendarItemData[];
+  sprints: CalendarSprintData[];
+}
 
 export default api;

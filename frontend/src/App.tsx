@@ -15,6 +15,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ProjectOverviewPage = lazy(() => import('./pages/ProjectOverviewPage'));
 const BacklogPage = lazy(() => import('./pages/BacklogPage'));
 const BoardPage = lazy(() => import('./pages/BoardPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const SprintsPage = lazy(() => import('./pages/SprintsPage'));
 const SprintPlanningPage = lazy(() => import('./pages/SprintPlanningPage'));
 const SprintSummaryPage = lazy(() => import('./pages/SprintSummaryPage'));
@@ -66,6 +67,7 @@ export default function App() {
                 <Route path="/projects/:projectId" element={<ProjectOverviewPage />} />
                 <Route path="/projects/:projectId/backlog" element={<BacklogPage />} />
                 <Route path="/projects/:projectId/board" element={<BoardPage />} />
+                <Route path="/projects/:projectId/calendar" element={<CalendarPage />} />
                 <Route path="/projects/:projectId/sprints" element={<SprintsPage />} />
                 <Route path="/projects/:projectId/sprints/:sprintId/plan" element={<SprintPlanningPage />} />
                 <Route path="/projects/:projectId/sprints/:sprintId/summary" element={<SprintSummaryPage />} />
