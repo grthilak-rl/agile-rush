@@ -16,6 +16,9 @@ build/
 .env.local
 *.local
 
+# Certificates
+*.pem
+
 # IDE
 .vscode/*
 !.vscode/extensions.json
@@ -47,3 +50,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+
+

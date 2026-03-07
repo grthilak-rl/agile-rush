@@ -104,9 +104,12 @@ class JiraImporter(BaseImporter):
                     due_date = self._parse_jira_date(val)
                     break
 
-            # Labels
+            # Labels - Jira exports labels space-separated, but also support comma
             labels_str = row.get("Labels") or row.get("labels") or ""
-            labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
+            if "," in labels_str:
+                labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
+            else:
+                labels = [lbl.strip() for lbl in labels_str.split() if lbl.strip()]
 
             # Assignee
             assignee = row.get("Assignee") or row.get("assignee") or None
