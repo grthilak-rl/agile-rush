@@ -53,18 +53,20 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[o.strip() for o in cors_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount uploads directory for serving uploaded files
-uploads_dir = os.getenv("UPLOAD_DIR", "./uploads")
-os.makedirs(uploads_dir, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+# Mount uploads directory only for local storage (S3 uses presigned URLs)
+if os.getenv("STORAGE_BACKEND", "local") != "s3":
+    uploads_dir = os.getenv("UPLOAD_DIR", "./uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # Include routers
 app.include_router(auth_router)
