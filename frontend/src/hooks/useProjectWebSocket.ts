@@ -12,7 +12,7 @@ export function useProjectWebSocket(
   onEvent: WSEventHandler
 ) {
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 10;
   const onEventRef = useRef(onEvent);

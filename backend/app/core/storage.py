@@ -8,6 +8,8 @@ Supports two backends:
 import os
 import uuid
 
+import boto3
+from botocore.config import Config
 from fastapi import UploadFile
 
 
@@ -15,12 +17,9 @@ class StorageService:
     def __init__(self):
         self.backend = os.getenv("STORAGE_BACKEND", "local")
         if self.backend == "s3":
-            import boto3
-            from botocore.config import Config
-
             self.s3 = boto3.client(
                 "s3",
-                region_name=os.getenv("AWS_REGION", "us-east-1"),
+                region_name=os.getenv("AWS_REGION", "ap-south-1"),
                 config=Config(signature_version="s3v4"),
             )
             self.bucket = os.getenv("AWS_S3_BUCKET")
@@ -32,7 +31,6 @@ class StorageService:
         """Save file and return {file_key, file_size, mime_type, thumbnail_url}."""
         ext = os.path.splitext(file.filename or "")[1]
         file_key = f"{project_id}/{item_id}/{uuid.uuid4()}{ext}"
-
         contents = await file.read()
         content_type = file.content_type or "application/octet-stream"
 
@@ -51,10 +49,9 @@ class StorageService:
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "wb") as f:
                 f.write(contents)
-
             thumbnail_url = None
             if content_type.startswith("image/") and content_type != "image/svg+xml":
-                thumbnail_url = await self._create_thumbnail(full_path, file_key)
+                thumbnail_url = await self._create_local_thumbnail(full_path, file_key)
 
         return {
             "file_key": file_key,
@@ -63,11 +60,10 @@ class StorageService:
             "thumbnail_url": thumbnail_url,
         }
 
-    async def _create_thumbnail(self, path: str, file_key: str) -> str:
+    async def _create_local_thumbnail(self, path: str, file_key: str):
         """Generate a 200x200 max thumbnail for image files (local storage)."""
         try:
             from PIL import Image
-
             thumb_key = f"thumbs/{file_key}"
             thumb_path = os.path.join(self.upload_dir, thumb_key)
             os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
@@ -78,23 +74,22 @@ class StorageService:
         except Exception:
             return None
 
-    async def _create_s3_thumbnail(self, contents: bytes, file_key: str, content_type: str) -> str:
+    async def _create_s3_thumbnail(self, contents: bytes, file_key: str, content_type: str):
         """Generate and upload a thumbnail to S3."""
         try:
-            from PIL import Image
             import io
-
+            from PIL import Image
             thumb_key = f"thumbs/{file_key}"
             img = Image.open(io.BytesIO(contents))
             img.thumbnail((200, 200))
             buf = io.BytesIO()
-            fmt = "PNG" if content_type == "image/png" else "JPEG"
+            fmt = img.format or "JPEG"
             img.save(buf, format=fmt)
             buf.seek(0)
             self.s3.put_object(
                 Bucket=self.bucket,
                 Key=thumb_key,
-                Body=buf.getvalue(),
+                Body=buf.read(),
                 ContentType=content_type,
             )
             return thumb_key

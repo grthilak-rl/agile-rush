@@ -744,7 +744,7 @@ export default function BoardPage() {
 
     switch (event.type) {
       case 'item:status_changed': {
-        const { item_id, from_status, to_status, moved_by_name, item_title } = d;
+        const { item_id, to_status, moved_by_name, item_title } = d;
         setItems((prev) => prev.map((item) =>
           item.id === item_id ? { ...item, status: to_status as BacklogItem['status'] } : item
         ));

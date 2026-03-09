@@ -6,8 +6,8 @@ services:
     restart: always
     env_file:
       - .env.production
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     networks:
       - app-network
@@ -21,7 +21,7 @@ services:
         VITE_WS_URL: ${VITE_WS_URL}
     restart: always
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     depends_on:
       - backend
     networks:

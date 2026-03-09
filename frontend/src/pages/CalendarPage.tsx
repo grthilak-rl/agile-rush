@@ -7,7 +7,6 @@ import {
   ListChecks,
   Bug,
   Calendar,
-  Plus,
   Loader2,
 } from 'lucide-react';
 import {
@@ -43,10 +42,6 @@ const TYPE_CONFIG: Record<string, { icon: typeof BookOpen; color: string; label:
 
 function getMonthStart(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function getMonthEnd(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
 function getWeekStart(d: Date): Date {
@@ -444,7 +439,6 @@ export default function CalendarPage() {
   const { rangeStart, rangeEnd, calendarGridStart } = useMemo(() => {
     if (viewMode === 'month') {
       const monthStart = getMonthStart(currentDate);
-      const monthEnd = getMonthEnd(currentDate);
       // Calendar grid starts on Monday before month start
       const startDay = monthStart.getDay();
       const gridOffset = startDay === 0 ? 6 : startDay - 1; // Monday = 0

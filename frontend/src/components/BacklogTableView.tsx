@@ -3,7 +3,6 @@ import {
   BookOpen,
   ListChecks,
   Bug,
-  Calendar,
   Trash2,
   ChevronUp,
   ChevronDown,

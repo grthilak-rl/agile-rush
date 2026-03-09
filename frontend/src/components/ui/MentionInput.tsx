@@ -49,8 +49,8 @@ export function MentionInput({
       try {
         const res = await membersApi.search(projectId, mentionQuery);
         setMentionResults(
-          res.data.map((m: { user_id: string; full_name: string }) => ({
-            id: m.user_id,
+          res.data.map((m) => ({
+            id: m.id,
             full_name: m.full_name,
           }))
         );

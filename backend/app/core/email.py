@@ -24,10 +24,9 @@ class EmailService:
             self.smtp_password = os.getenv("SMTP_PASSWORD", "")
         elif self.provider == "ses":
             import boto3
-
             self.ses = boto3.client(
                 "ses",
-                region_name=os.getenv("AWS_SES_REGION", "us-east-1"),
+                region_name=os.getenv("AWS_SES_REGION", "ap-south-1"),
             )
 
     async def send(self, to: str, subject: str, html_body: str):
@@ -46,7 +45,6 @@ class EmailService:
                 msg["From"] = self.from_email
                 msg["To"] = to
                 msg.attach(MIMEText(html_body, "html"))
-
                 with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                     server.starttls()
                     server.login(self.smtp_user, self.smtp_password)

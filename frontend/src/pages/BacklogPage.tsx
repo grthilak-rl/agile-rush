@@ -18,10 +18,8 @@ import {
   Paperclip,
   Upload,
   FileText,
-  Image as ImageIcon,
   MessageSquare,
   Edit3,
-  MoreHorizontal,
   List,
   Table2,
 } from 'lucide-react';
