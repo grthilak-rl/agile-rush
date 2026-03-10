@@ -76,8 +76,17 @@ export const authApi = {
 };
 
 // Projects
+export interface DiscoverProject {
+  id: string;
+  name: string;
+  description: string | null;
+  owner: { id: string; full_name: string } | null;
+  pending_request?: boolean;
+}
+
 export const projectsApi = {
   list: () => api.get<Project[]>('/projects/'),
+  discover: (q?: string) => api.get<DiscoverProject[]>('/projects/discover', { params: { q } }),
   create: (data: {
     name: string;
     client_name?: string;
@@ -204,10 +213,24 @@ export const membersApi = {
     api.get<ProjectMember[]>(`/projects/${projectId}/members`),
   search: (projectId: string, q: string) =>
     api.get<MemberSearchResult[]>(`/projects/${projectId}/members/search`, { params: { q } }),
+  searchUsersToAdd: (projectId: string, q: string) =>
+    api.get<MemberSearchResult[]>(`/projects/${projectId}/members/search-users`, { params: { q } }),
+  addMember: (projectId: string, data: { user_id: string; role?: string }) =>
+    api.post(`/projects/${projectId}/members/add`, data),
   invite: (projectId: string, data: { email: string; role?: string }) =>
     api.post(`/projects/${projectId}/members/invite`, data),
   accept: (projectId: string) =>
     api.post(`/projects/${projectId}/members/accept`),
+  requestJoin: (projectId: string) =>
+    api.post(`/projects/${projectId}/members/request-join`),
+  withdrawRequest: (projectId: string) =>
+    api.post(`/projects/${projectId}/members/withdraw-request`),
+  joinRequests: (projectId: string) =>
+    api.get<ProjectMember[]>(`/projects/${projectId}/members/join-requests`),
+  approveRequest: (projectId: string, memberId: string) =>
+    api.post(`/projects/${projectId}/members/${memberId}/approve`),
+  denyRequest: (projectId: string, memberId: string) =>
+    api.post(`/projects/${projectId}/members/${memberId}/deny`),
   updateRole: (projectId: string, memberId: string, data: { role: string }) =>
     api.patch(`/projects/${projectId}/members/${memberId}`, data),
   remove: (projectId: string, memberId: string) =>

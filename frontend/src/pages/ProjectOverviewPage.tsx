@@ -8,11 +8,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  Users,
   Zap,
 } from 'lucide-react';
-import { projectsApi, sprintsApi, activityApi } from '../api/client';
+import { projectsApi, sprintsApi, activityApi, membersApi } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
+import { TeamPanel } from '../components/team/TeamPanel';
 import type { Project, Sprint, ActivityLog, ProjectStats } from '../types';
 import { Card } from '../components/ui/Card';
 import { Badge, StatusBadge } from '../components/ui/Badge';
@@ -43,6 +44,7 @@ export default function ProjectOverviewPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
@@ -52,6 +54,7 @@ export default function ProjectOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingSprintAction, setCreatingSprintAction] = useState(false);
+  const [userRole, setUserRole] = useState('viewer');
 
   useEffect(() => {
     if (!projectId) return;
@@ -86,7 +89,13 @@ export default function ProjectOverviewPage() {
       .finally(() => {
         setLoading(false);
       });
-  }, [projectId]);
+
+    // Determine user role
+    membersApi.list(projectId).then((res) => {
+      const me = res.data.find((m) => m.user_id === user?.id);
+      if (me) setUserRole(me.role);
+    }).catch(() => {});
+  }, [projectId, user?.id]);
 
   if (loading) {
     return (
@@ -642,33 +651,7 @@ export default function ProjectOverviewPage() {
         </Card>
 
         {/* Team Panel */}
-        <Card hoverLift={false}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <Users size={18} color="#64748B" strokeWidth={1.75} />
-            <h3>Team</h3>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: 120,
-              padding: 24,
-              borderRadius: 10,
-              backgroundColor: '#F8FAFC',
-              border: '1px dashed #CBD5E1',
-            }}
-          >
-            <Users size={32} color="#94A3B8" strokeWidth={1.5} style={{ marginBottom: 12 }} />
-            <p style={{ color: '#64748B', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-              Team management coming soon
-            </p>
-            <p style={{ color: '#94A3B8', fontSize: 12 }}>
-              Invite and manage team members for this project.
-            </p>
-          </div>
-        </Card>
+        {projectId && <TeamPanel projectId={projectId} userRole={userRole} />}
       </div>
 
       {/* Activity Feed */}

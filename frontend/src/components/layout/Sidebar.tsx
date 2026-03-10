@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   CheckSquare,
+  Compass,
 } from 'lucide-react';
 import { projectsApi } from '../../api/client';
 import type { Project } from '../../types';
@@ -22,6 +23,7 @@ import type { Project } from '../../types';
 const dashboardNav = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: CheckSquare, label: 'My Tasks', path: '/my-tasks' },
+  { icon: Compass, label: 'Discover Projects', path: '/discover' },
 ];
 
 const projectNav = [
@@ -65,6 +67,7 @@ export function Sidebar() {
   const isActive = (path: string) => {
     if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
     if (path === '/my-tasks') return location.pathname === '/my-tasks';
+    if (path === '/discover') return location.pathname === '/discover';
     if (isProjectContext && projectId) {
       const fullPath = `/projects/${projectId}${path}`;
       if (path === '') return location.pathname === `/projects/${projectId}`;

@@ -79,6 +79,60 @@ def list_projects(
     return [_project_response(p, db) for p in projects]
 
 
+@router.get("/discover")
+def discover_projects(
+    q: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Browse projects the user is NOT part of, for join request flow."""
+    # IDs of projects user is an active member of (exclude these)
+    active_member_ids = db.query(ProjectMember.project_id).filter(
+        ProjectMember.user_id == current_user.id,
+        ProjectMember.status == MemberStatus.active,
+    ).subquery()
+
+    # IDs of projects user has a pending request for (include these with flag)
+    pending_request_ids = set()
+    pending_requests = db.query(ProjectMember.project_id).filter(
+        ProjectMember.user_id == current_user.id,
+        ProjectMember.status == MemberStatus.pending,
+        ProjectMember.invited_by.is_(None),
+    ).all()
+    for (pid,) in pending_requests:
+        pending_request_ids.add(pid)
+
+    query = db.query(Project).filter(
+        Project.owner_id != current_user.id,
+        Project.id.notin_(active_member_ids),
+    )
+
+    if q:
+        search_term = f"%{q}%"
+        query = query.filter(
+            or_(
+                Project.name.ilike(search_term),
+                Project.description.ilike(search_term),
+            )
+        )
+
+    projects = query.limit(20).all()
+
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "owner": {
+                "id": p.owner.id,
+                "full_name": p.owner.full_name,
+            } if p.owner else None,
+            "pending_request": p.id in pending_request_ids,
+        }
+        for p in projects
+    ]
+
+
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(
     project_data: ProjectCreate,

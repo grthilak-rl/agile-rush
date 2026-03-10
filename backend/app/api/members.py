@@ -25,6 +25,11 @@ class InviteRequest(BaseModel):
     role: str = "member"
 
 
+class AddMemberRequest(BaseModel):
+    user_id: str
+    role: str = "member"
+
+
 class RoleUpdateRequest(BaseModel):
     role: str
 
@@ -103,6 +108,139 @@ def search_members(
         }
         for u in users
     ]
+
+
+@router.get("/{project_id}/members/search-users")
+def search_users_to_add(
+    project_id: str,
+    q: str = Query("", min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search registered users who are NOT already members of this project."""
+    get_project_with_access(project_id, current_user, db, "admin")
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get IDs of existing members (active or pending) + owner
+    existing_ids = {project.owner_id}
+    existing_members = db.query(ProjectMember.user_id).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.status.in_([MemberStatus.active, MemberStatus.pending]),
+        ProjectMember.user_id.isnot(None),
+    ).all()
+    for (uid,) in existing_members:
+        existing_ids.add(uid)
+
+    search_term = f"%{q}%"
+    users = (
+        db.query(User)
+        .filter(
+            User.id.notin_(existing_ids),
+            or_(
+                User.full_name.ilike(search_term),
+                User.email.ilike(search_term),
+            ),
+        )
+        .limit(10)
+        .all()
+    )
+    return [
+        {
+            "id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "avatar_url": u.avatar_url,
+        }
+        for u in users
+    ]
+
+
+@router.post("/{project_id}/members/add")
+def add_member(
+    project_id: str,
+    data: AddMemberRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Directly add a registered user to the project (admin/owner only)."""
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
+
+    if data.role not in ("admin", "member", "viewer"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid role. Must be admin, member, or viewer.",
+        )
+
+    # Check user exists
+    target_user = db.query(User).filter(User.id == data.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if already owner
+    if target_user.id == project.owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This user is already the project owner",
+        )
+
+    # Check if already a member
+    existing = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == data.user_id,
+        ProjectMember.status.in_([MemberStatus.active, MemberStatus.pending]),
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This user is already on the project",
+        )
+
+    member = ProjectMember(
+        project_id=project_id,
+        user_id=target_user.id,
+        role=MemberRole(data.role),
+        invited_by=current_user.id,
+        status=MemberStatus.active,
+        joined_at=datetime.now(timezone.utc),
+    )
+    db.add(member)
+
+    # Activity log
+    log = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        action=ActionType.created,
+        entity_type=EntityType.project,
+        entity_id=project_id,
+        details={"action": "member_added", "user_name": target_user.full_name},
+    )
+    db.add(log)
+
+    # Notify the added user
+    create_notification(
+        db=db,
+        user_id=target_user.id,
+        type=NotificationType.invitation,
+        title="Added to Project",
+        message=f"{current_user.full_name} added you to {project.name}",
+        project_id=project_id,
+        entity_type="project",
+        entity_id=project_id,
+    )
+
+    db.commit()
+    db.refresh(member)
+
+    member = (
+        db.query(ProjectMember)
+        .options(joinedload(ProjectMember.user))
+        .filter(ProjectMember.id == member.id)
+        .first()
+    )
+    return {"member": _member_response(member), "status": "added"}
 
 
 @router.get("/{project_id}/members")
@@ -416,3 +554,199 @@ def transfer_ownership(
 
     db.commit()
     return {"message": "Ownership transferred"}
+
+
+@router.post("/{project_id}/members/request-join")
+def request_join(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """User requests to join a project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check if already owner
+    if current_user.id == project.owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already the project owner",
+        )
+
+    # Check if already a member or has pending request
+    existing = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == current_user.id,
+        ProjectMember.status.in_([MemberStatus.active, MemberStatus.pending]),
+    ).first()
+    if existing:
+        if existing.status == MemberStatus.pending:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You already have a pending request for this project",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already a member of this project",
+        )
+
+    member = ProjectMember(
+        project_id=project_id,
+        user_id=current_user.id,
+        role=MemberRole.member,
+        status=MemberStatus.pending,
+    )
+    db.add(member)
+
+    # Notify the project owner
+    create_notification(
+        db=db,
+        user_id=project.owner_id,
+        type=NotificationType.invitation,
+        title="Join Request",
+        message=f"{current_user.full_name} wants to join {project.name}",
+        project_id=project_id,
+        entity_type="project",
+        entity_id=project_id,
+    )
+
+    db.commit()
+    db.refresh(member)
+    return {"message": "Join request sent", "status": "pending"}
+
+
+@router.get("/{project_id}/members/join-requests")
+def list_join_requests(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List pending join requests for a project (admin/owner only)."""
+    get_project_with_access(project_id, current_user, db, "admin")
+
+    requests = (
+        db.query(ProjectMember)
+        .options(joinedload(ProjectMember.user))
+        .filter(
+            ProjectMember.project_id == project_id,
+            ProjectMember.status == MemberStatus.pending,
+            ProjectMember.invited_by.is_(None),  # No inviter = join request
+        )
+        .all()
+    )
+    return [_member_response(r) for r in requests]
+
+
+@router.post("/{project_id}/members/{member_id}/approve")
+def approve_join_request(
+    project_id: str,
+    member_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Approve a pending join request (admin/owner only)."""
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
+
+    member = db.query(ProjectMember).filter(
+        ProjectMember.id == member_id,
+        ProjectMember.project_id == project_id,
+        ProjectMember.status == MemberStatus.pending,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Pending request not found")
+
+    member.status = MemberStatus.active
+    member.joined_at = datetime.now(timezone.utc)
+
+    # Activity log
+    log = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        action=ActionType.created,
+        entity_type=EntityType.project,
+        entity_id=project_id,
+        details={"action": "member_approved", "user_name": member.user.full_name if member.user else ""},
+    )
+    db.add(log)
+
+    # Notify the requester
+    if member.user_id:
+        create_notification(
+            db=db,
+            user_id=member.user_id,
+            type=NotificationType.invitation,
+            title="Request Approved",
+            message=f"Your request to join {project.name} has been approved",
+            project_id=project_id,
+            entity_type="project",
+            entity_id=project_id,
+        )
+
+    db.commit()
+    db.refresh(member)
+    member = (
+        db.query(ProjectMember)
+        .options(joinedload(ProjectMember.user))
+        .filter(ProjectMember.id == member.id)
+        .first()
+    )
+    return _member_response(member)
+
+
+@router.post("/{project_id}/members/{member_id}/deny")
+def deny_join_request(
+    project_id: str,
+    member_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Deny a pending join request (admin/owner only)."""
+    project, _ = get_project_with_access(project_id, current_user, db, "admin")
+
+    member = db.query(ProjectMember).filter(
+        ProjectMember.id == member_id,
+        ProjectMember.project_id == project_id,
+        ProjectMember.status == MemberStatus.pending,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Pending request not found")
+
+    member.status = MemberStatus.removed
+
+    # Notify the requester
+    if member.user_id:
+        create_notification(
+            db=db,
+            user_id=member.user_id,
+            type=NotificationType.invitation,
+            title="Request Denied",
+            message=f"Your request to join {project.name} was not approved",
+            project_id=project_id,
+            entity_type="project",
+            entity_id=project_id,
+        )
+
+    db.commit()
+    return {"message": "Join request denied"}
+
+
+@router.post("/{project_id}/members/withdraw-request")
+def withdraw_join_request(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Withdraw your own pending join request."""
+    member = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_id == current_user.id,
+        ProjectMember.status == MemberStatus.pending,
+        ProjectMember.invited_by.is_(None),  # Only self-initiated requests
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="No pending request found")
+
+    member.status = MemberStatus.removed
+    db.commit()
+    return {"message": "Join request withdrawn"}

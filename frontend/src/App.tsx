@@ -24,6 +24,7 @@ const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const MyTasksPage = lazy(() => import('./pages/MyTasksPage'));
+const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function CatchAllRedirect() {
@@ -75,6 +76,7 @@ export default function App() {
                 <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
                 <Route path="/projects/:projectId/settings" element={<SettingsPage />} />
                 <Route path="/my-tasks" element={<MyTasksPage />} />
+                <Route path="/discover" element={<DiscoverPage />} />
                 <Route path="/settings/profile" element={<ProfilePage />} />
               </Route>
 
