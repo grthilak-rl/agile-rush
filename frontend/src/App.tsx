@@ -25,6 +25,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const MyTasksPage = lazy(() => import('./pages/MyTasksPage'));
 const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function CatchAllRedirect() {
@@ -78,6 +79,7 @@ export default function App() {
                 <Route path="/my-tasks" element={<MyTasksPage />} />
                 <Route path="/discover" element={<DiscoverPage />} />
                 <Route path="/settings/profile" element={<ProfilePage />} />
+                <Route path="/admin" element={<AdminPage />} />
               </Route>
 
               {/* 404 inside layout for authenticated users */}

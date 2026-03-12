@@ -380,4 +380,64 @@ export interface CalendarResponse {
   sprints: CalendarSprintData[];
 }
 
+// Admin
+export interface AdminStats {
+  total_users: number;
+  total_projects: number;
+  new_users_this_week: number;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  avatar_url: string | null;
+  is_admin: boolean;
+  is_disabled: boolean;
+  created_at: string | null;
+  project_count: number;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface AdminProject {
+  id: string;
+  name: string;
+  client_name: string | null;
+  description: string | null;
+  project_type: string | null;
+  owner_name: string | null;
+  owner_email: string | null;
+  member_count: number;
+  item_count: number;
+  created_at: string | null;
+}
+
+export interface AdminProjectsResponse {
+  projects: AdminProject[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export const adminApi = {
+  stats: () => api.get<AdminStats>('/admin/stats'),
+  listUsers: (params?: { page?: number; per_page?: number; q?: string }) =>
+    api.get<AdminUsersResponse>('/admin/users', { params }),
+  disableUser: (userId: string) => api.patch(`/admin/users/${userId}/disable`),
+  enableUser: (userId: string) => api.patch(`/admin/users/${userId}/enable`),
+  resetPassword: (userId: string) =>
+    api.post<{ message: string; temporary_password: string }>(`/admin/users/${userId}/reset-password`),
+  toggleAdmin: (userId: string) =>
+    api.patch<{ message: string; is_admin: boolean }>(`/admin/users/${userId}/toggle-admin`),
+  listProjects: (params?: { page?: number; per_page?: number; q?: string }) =>
+    api.get<AdminProjectsResponse>('/admin/projects', { params }),
+  deleteProject: (projectId: string) => api.delete(`/admin/projects/${projectId}`),
+};
+
 export default api;

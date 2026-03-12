@@ -1,7 +1,7 @@
 import enum
 from uuid import uuid4
 
-from sqlalchemy import String, DateTime, func, JSON
+from sqlalchemy import String, Boolean, DateTime, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,6 +24,8 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     email_notifications = mapped_column(JSON, default=lambda: DEFAULT_EMAIL_NOTIFICATIONS.copy(), nullable=True)
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -4,6 +4,8 @@ export interface User {
   full_name: string;
   avatar_url: string | null;
   created_at: string;
+  is_admin?: boolean;
+  is_disabled?: boolean;
 }
 
 export interface Project {

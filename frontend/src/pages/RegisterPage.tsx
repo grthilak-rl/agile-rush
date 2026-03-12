@@ -75,7 +75,7 @@ export default function RegisterPage() {
         }}
       >
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 32 }}>
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 32, textDecoration: 'none', color: 'inherit' }}>
           <div
             style={{
               width: 36,
@@ -92,7 +92,7 @@ export default function RegisterPage() {
           <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 20 }}>
             Agile<span style={{ color: '#2563EB' }}>Rush</span>
           </span>
-        </div>
+        </Link>
 
         <h2 style={{ textAlign: 'center', marginBottom: 4 }}>Create your account</h2>
         <p style={{ textAlign: 'center', color: '#64748B', marginBottom: 24, fontSize: 14 }}>

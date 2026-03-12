@@ -21,6 +21,8 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     avatar_url: Optional[str] = None
+    is_admin: bool = False
+    is_disabled: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

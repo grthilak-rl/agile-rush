@@ -16,8 +16,10 @@ import {
   X,
   CheckSquare,
   Compass,
+  Shield,
 } from 'lucide-react';
 import { projectsApi } from '../../api/client';
+import { useAuth } from '../../hooks/useAuth';
 import type { Project } from '../../types';
 
 const dashboardNav = [
@@ -43,6 +45,7 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { projectId } = useParams();
+  const { user } = useAuth();
 
   const isProjectContext = location.pathname.startsWith('/projects/');
 
@@ -68,6 +71,7 @@ export function Sidebar() {
     if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
     if (path === '/my-tasks') return location.pathname === '/my-tasks';
     if (path === '/discover') return location.pathname === '/discover';
+    if (path === '/admin') return location.pathname === '/admin';
     if (isProjectContext && projectId) {
       const fullPath = `/projects/${projectId}${path}`;
       if (path === '') return location.pathname === `/projects/${projectId}`;
@@ -177,6 +181,7 @@ export function Sidebar() {
               </div>
             )}
             {dashboardNav.map((item) => navItem(item, () => handleNav(item.path)))}
+            {user?.is_admin && navItem({ icon: Shield, label: 'Admin', path: '/admin' }, () => navigate('/admin'))}
 
             {/* Recent Projects */}
             {recentProjects.length > 0 && (

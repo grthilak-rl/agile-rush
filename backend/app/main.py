@@ -31,6 +31,7 @@ from app.api.comments import router as comments_router
 from app.api.ws import router as ws_router
 from app.api.calendar import router as calendar_router
 from app.api.imports import router as imports_router
+from app.api.admin import router as admin_router
 
 # Import all models so they are registered with Base.metadata
 import app.models  # noqa: F401
@@ -89,6 +90,7 @@ app.include_router(comments_router)
 app.include_router(ws_router)
 app.include_router(calendar_router)
 app.include_router(imports_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

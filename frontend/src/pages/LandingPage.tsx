@@ -886,7 +886,8 @@ function HowItWorksSection() {
   );
 }
 
-// ─── Testimonials Section ──────────────────────────────────────────
+// ─── Testimonials Section (hidden for now) ─────────────────────────
+// @ts-ignore: temporarily hidden
 function TestimonialsSection() {
   const testimonials = [
     {
@@ -1712,7 +1713,7 @@ export default function LandingPage() {
       <HeroSection />
       <FeaturesSection />
       <HowItWorksSection />
-      <TestimonialsSection />
+      {/* <TestimonialsSection /> */}
       <PricingSection />
       <FinalCTASection />
       <Footer />
