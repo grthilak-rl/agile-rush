@@ -641,6 +641,17 @@ export default function SprintsPage() {
                 >
                   Complete Sprint
                 </Button>
+                {(sprintStats[sprint.id]?.totalItems ?? 0) === 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Trash2 size={14} />}
+                    onClick={() => setDeleteTarget(sprint)}
+                    style={{ color: '#F43F5E' }}
+                  >
+                    Delete
+                  </Button>
+                )}
               </>
             )}
 

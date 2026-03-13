@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -19,11 +19,18 @@ from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.models.retro_item import RetroItem
 from app.models.daily_snapshot import DailySnapshot
 from app.models.notification import Notification
+from app.models.organization import Organization
+from app.models.org_member import OrgMember, OrgMemberStatus
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectStatsResponse
 
 
 class DeleteConfirmation(BaseModel):
     confirm_name: str
+
+
+class MoveToOrgRequest(BaseModel):
+    org_id: str
+
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -55,6 +62,21 @@ def _project_response(project: Project, db: Session) -> ProjectResponse:
     project_resp.total_items = total_items
     project_resp.completed_items = completed_items
     project_resp.progress_percentage = round(progress_percentage, 1)
+
+    # Add org info
+    if project.org_id:
+        org = db.query(Organization).filter(Organization.id == project.org_id).first()
+        if org:
+            project_resp.org_id = org.id
+            project_resp.org_name = org.name
+            project_resp.org_slug = org.slug
+            project_resp.is_personal = False
+    else:
+        project_resp.org_id = None
+        project_resp.org_name = None
+        project_resp.org_slug = None
+        project_resp.is_personal = True
+
     return project_resp
 
 
@@ -63,20 +85,37 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Projects user owns OR is an active member of
+    # 1. Personal projects: user is owner and org_id is NULL
+    personal_owned = db.query(Project).filter(
+        Project.owner_id == current_user.id,
+        Project.org_id == None,  # noqa: E711
+    ).all()
+
+    # 2. Projects where user is a direct member (via ProjectMember)
     member_project_ids = db.query(ProjectMember.project_id).filter(
         ProjectMember.user_id == current_user.id,
         ProjectMember.status == MemberStatus.active,
     ).subquery()
 
-    projects = db.query(Project).filter(
-        or_(
-            Project.owner_id == current_user.id,
-            Project.id.in_(member_project_ids),
-        )
+    member_projects = db.query(Project).filter(
+        Project.id.in_(member_project_ids),
+        Project.org_id == None,  # noqa: E711
     ).all()
 
-    return [_project_response(p, db) for p in projects]
+    # 3. Organization projects: user is an active org member
+    user_org_ids = db.query(OrgMember.org_id).filter(
+        OrgMember.user_id == current_user.id,
+        OrgMember.status == OrgMemberStatus.active,
+    ).subquery()
+
+    org_projects = db.query(Project).filter(
+        Project.org_id.in_(user_org_ids)
+    ).all()
+
+    # Combine and deduplicate
+    all_projects = {p.id: p for p in personal_owned + member_projects + org_projects}
+
+    return [_project_response(p, db) for p in all_projects.values()]
 
 
 @router.get("/discover")
@@ -85,7 +124,7 @@ def discover_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Browse projects the user is NOT part of, for join request flow."""
+    """Browse personal projects (no org) the user is NOT part of, for join request flow."""
     # IDs of projects user is an active member of (exclude these)
     active_member_ids = db.query(ProjectMember.project_id).filter(
         ProjectMember.user_id == current_user.id,
@@ -102,9 +141,11 @@ def discover_projects(
     for (pid,) in pending_requests:
         pending_request_ids.add(pid)
 
+    # Only show personal projects (not org projects) for discover
     query = db.query(Project).filter(
         Project.owner_id != current_user.id,
         Project.id.notin_(active_member_ids),
+        Project.org_id == None,  # noqa: E711
     )
 
     if q:
@@ -139,6 +180,21 @@ def create_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    org_id = None
+    if project_data.org_id:
+        # Verify user is admin/owner in the org
+        org = db.query(Organization).filter(Organization.id == project_data.org_id).first()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        org_member = db.query(OrgMember).filter(
+            OrgMember.org_id == project_data.org_id,
+            OrgMember.user_id == current_user.id,
+            OrgMember.status == OrgMemberStatus.active,
+        ).first()
+        if not org_member or org_member.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Only org admins can create projects in an organization")
+        org_id = project_data.org_id
+
     existing_count = db.query(func.count(Project.id)).filter(
         Project.owner_id == current_user.id
     ).scalar() or 0
@@ -151,17 +207,14 @@ def create_project(
         project_type=project_data.project_type or ProjectType.contract,
         default_sprint_duration=project_data.default_sprint_duration or 2,
         owner_id=current_user.id,
+        org_id=org_id,
         color=color,
     )
     db.add(project)
     db.commit()
     db.refresh(project)
 
-    project_resp = ProjectResponse.model_validate(project)
-    project_resp.total_items = 0
-    project_resp.completed_items = 0
-    project_resp.progress_percentage = 0.0
-    return project_resp
+    return _project_response(project, db)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -257,6 +310,55 @@ def delete_project(
     db.delete(project)
     db.commit()
     return {"message": "Project deleted"}
+
+
+@router.post("/{project_id}/move-to-org")
+def move_project_to_org(
+    project_id: str,
+    data: MoveToOrgRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move a personal project to an organization."""
+    project, _ = get_project_with_access(project_id, current_user, db, "owner")
+
+    # Verify user is a member of the target org
+    org = db.query(Organization).filter(Organization.id == data.org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org_member = db.query(OrgMember).filter(
+        OrgMember.org_id == data.org_id,
+        OrgMember.user_id == current_user.id,
+        OrgMember.status == OrgMemberStatus.active,
+    ).first()
+    if not org_member:
+        raise HTTPException(status_code=403, detail="You must be a member of the target organization")
+
+    project.org_id = data.org_id
+    db.commit()
+    db.refresh(project)
+
+    return _project_response(project, db)
+
+
+@router.post("/{project_id}/move-to-personal")
+def move_project_to_personal(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move an org project to personal."""
+    project, _ = get_project_with_access(project_id, current_user, db, "owner")
+
+    if not project.org_id:
+        raise HTTPException(status_code=400, detail="Project is already personal")
+
+    project.org_id = None
+    db.commit()
+    db.refresh(project)
+
+    return _project_response(project, db)
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsResponse)

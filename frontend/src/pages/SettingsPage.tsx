@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Settings, Trash2, Save } from 'lucide-react';
-import { projectsApi, membersApi, sprintsApi } from '../api/client';
+import { Settings, Trash2, Save, Building2, ArrowRightLeft } from 'lucide-react';
+import { projectsApi, membersApi, sprintsApi, organizationsApi } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
 import { Card } from '../components/ui/Card';
@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
 import { TeamPanel } from '../components/team/TeamPanel';
 import { ImportExportPanel } from '../components/ImportExportPanel';
-import type { Project, Sprint } from '../types';
+import type { Project, Sprint, Organization } from '../types';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -52,6 +52,11 @@ export default function SettingsPage() {
   // Sprints (for export)
   const [projectSprints, setProjectSprints] = useState<Sprint[]>([]);
 
+  // Move to org state
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [moveOrgId, setMoveOrgId] = useState('');
+  const [moving, setMoving] = useState(false);
+
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
@@ -82,6 +87,11 @@ export default function SettingsPage() {
     // Load sprints for export
     sprintsApi.list(projectId).then((res) => {
       setProjectSprints(res.data);
+    }).catch(() => {});
+
+    // Load orgs for move feature
+    organizationsApi.list().then((res) => {
+      setOrgs(res.data.filter((o: Organization) => o.my_role === 'owner' || o.my_role === 'admin'));
     }).catch(() => {});
   }, [projectId, addToast, user?.id]);
 
@@ -270,6 +280,90 @@ export default function SettingsPage() {
           sprints={projectSprints}
           onImportComplete={() => navigate(`/projects/${projectId}/backlog`)}
         />
+      )}
+
+      {/* Move Project */}
+      {projectId && (userRole === 'owner' || userRole === 'admin') && (
+        <Card hoverLift={false} style={{ marginBottom: 24 }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <ArrowRightLeft size={18} strokeWidth={2} color="#2563EB" />
+            Organization
+          </h3>
+          {project?.org_id ? (
+            <>
+              <p style={{ color: '#64748B', fontSize: 13, marginBottom: 16 }}>
+                This project belongs to <strong>{project.org_name}</strong>. You can move it to your personal workspace.
+              </p>
+              <Button
+                variant="secondary"
+                loading={moving}
+                onClick={async () => {
+                  if (!projectId) return;
+                  setMoving(true);
+                  try {
+                    const res = await projectsApi.moveToPersonal(projectId);
+                    setProject(res.data);
+                    addToast('success', 'Project moved to personal workspace');
+                  } catch {
+                    addToast('error', 'Failed to move project');
+                  } finally {
+                    setMoving(false);
+                  }
+                }}
+              >
+                Move to Personal
+              </Button>
+            </>
+          ) : (
+            <>
+              <p style={{ color: '#64748B', fontSize: 13, marginBottom: 16 }}>
+                This is a personal project. Move it to an organization to share with your team.
+              </p>
+              {orgs.length > 0 ? (
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 200px' }}>
+                    <label style={labelStyle}>Organization</label>
+                    <select
+                      value={moveOrgId}
+                      onChange={(e) => setMoveOrgId(e.target.value)}
+                      style={{ ...inputStyle, appearance: 'auto' as const, backgroundColor: '#FFFFFF' }}
+                    >
+                      <option value="">Select organization...</option>
+                      {orgs.map((o) => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    icon={<Building2 size={16} strokeWidth={2} />}
+                    loading={moving}
+                    disabled={!moveOrgId}
+                    onClick={async () => {
+                      if (!projectId || !moveOrgId) return;
+                      setMoving(true);
+                      try {
+                        const res = await projectsApi.moveToOrg(projectId, moveOrgId);
+                        setProject(res.data);
+                        setMoveOrgId('');
+                        addToast('success', 'Project moved to organization');
+                      } catch {
+                        addToast('error', 'Failed to move project');
+                      } finally {
+                        setMoving(false);
+                      }
+                    }}
+                  >
+                    Move to Org
+                  </Button>
+                </div>
+              ) : (
+                <p style={{ color: '#94A3B8', fontSize: 13, fontStyle: 'italic' }}>
+                  You don't belong to any organizations yet. Create one from the dashboard.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
       )}
 
       {/* Danger Zone */}

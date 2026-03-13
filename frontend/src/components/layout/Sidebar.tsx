@@ -17,10 +17,11 @@ import {
   CheckSquare,
   Compass,
   Shield,
+  Building2,
 } from 'lucide-react';
-import { projectsApi } from '../../api/client';
+import { projectsApi, organizationsApi } from '../../api/client';
 import { useAuth } from '../../hooks/useAuth';
-import type { Project } from '../../types';
+import type { Project, Organization } from '../../types';
 
 const dashboardNav = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -42,6 +43,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { projectId } = useParams();
@@ -64,8 +66,9 @@ export function Sidebar() {
   useEffect(() => {
     if (!isProjectContext) {
       projectsApi.list().then((res) => setRecentProjects(res.data.slice(0, 3))).catch(() => {});
+      organizationsApi.list().then((res) => setOrganizations(res.data)).catch(() => {});
     }
-  }, [isProjectContext]);
+  }, [isProjectContext, location.pathname]);
 
   const isActive = (path: string) => {
     if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
@@ -182,6 +185,90 @@ export function Sidebar() {
             )}
             {dashboardNav.map((item) => navItem(item, () => handleNav(item.path)))}
             {user?.is_admin && navItem({ icon: Shield, label: 'Admin', path: '/admin' }, () => navigate('/admin'))}
+
+            {/* Organizations */}
+              <div style={{ marginTop: 24 }}>
+                {!collapsed && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px 8px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Organizations
+                    </span>
+                    <button
+                      onClick={() => navigate('/dashboard?createOrg=1')}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        width: 18, height: 18, borderRadius: 4,
+                        color: '#64748B', cursor: 'pointer',
+                        transition: 'color 150ms ease',
+                      }}
+                      title="Create Organization"
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#FFFFFF'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#64748B'; }}
+                    >
+                      <span style={{ fontSize: 16, lineHeight: 1, fontWeight: 600 }}>+</span>
+                    </button>
+                  </div>
+                )}
+                {collapsed && (
+                  <button
+                    onClick={() => navigate('/dashboard?createOrg=1')}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: '100%', padding: '10px 14px', borderRadius: 8,
+                      color: '#64748B', cursor: 'pointer', fontSize: 18,
+                    }}
+                    title="Create Organization"
+                  >
+                    +
+                  </button>
+                )}
+                {organizations.map((org) => {
+                  const active = location.pathname === `/org/${org.slug}`;
+                  return (
+                    <button
+                      key={org.id}
+                      onClick={() => navigate(`/org/${org.slug}`)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        width: '100%',
+                        padding: collapsed ? '10px 14px' : '10px 12px',
+                        borderRadius: 8,
+                        color: active ? '#FFFFFF' : '#94A3B8',
+                        backgroundColor: active ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+                        borderLeft: active ? '3px solid #2563EB' : '3px solid transparent',
+                        transition: 'all 150ms ease',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: active ? 600 : 400,
+                        whiteSpace: 'nowrap',
+                        justifyContent: collapsed ? 'center' : undefined,
+                      }}
+                      title={collapsed ? org.name : undefined}
+                    >
+                      <Building2 size={16} strokeWidth={1.75} />
+                      {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{org.name}</span>}
+                    </button>
+                  );
+                })}
+                {organizations.length === 0 && !collapsed && (
+                  <button
+                    onClick={() => navigate('/dashboard?createOrg=1')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      width: '100%', padding: '10px 12px', borderRadius: 8,
+                      color: '#64748B', cursor: 'pointer', fontSize: 13,
+                      transition: 'color 150ms ease',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#94A3B8'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#64748B'; }}
+                  >
+                    <Building2 size={16} strokeWidth={1.75} />
+                    Create Organization
+                  </button>
+                )}
+              </div>
 
             {/* Recent Projects */}
             {recentProjects.length > 0 && (

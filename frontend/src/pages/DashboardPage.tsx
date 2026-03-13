@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   FolderKanban,
   IterationCw,
@@ -9,11 +9,12 @@ import {
   TrendingUp,
   TrendingDown,
   Calendar,
+  Building2,
 } from 'lucide-react';
-import { projectsApi, dashboardApi, backlogApi } from '../api/client';
+import { projectsApi, dashboardApi, backlogApi, organizationsApi } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/ui/Toast';
-import type { Project, DashboardStats, BacklogItem } from '../types';
+import type { Project, DashboardStats, BacklogItem, Organization } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -61,6 +62,87 @@ function getGreeting(fullName: string): string {
   return `Good evening, ${fullName}`;
 }
 
+function ProjectGroups({ projects, navigate }: { projects: Project[]; navigate: (path: string) => void }) {
+  const personalProjects = projects.filter((p: Project) => !p.org_id);
+  const orgGroups = new Map<string, { name: string; slug: string; projects: Project[] }>();
+  for (const p of projects) {
+    if (p.org_id && p.org_name) {
+      const existing = orgGroups.get(p.org_id);
+      if (existing) {
+        existing.projects.push(p);
+      } else {
+        orgGroups.set(p.org_id, { name: p.org_name, slug: p.org_slug || '', projects: [p] });
+      }
+    }
+  }
+
+  const renderProjectCard = (project: Project) => (
+    <Card
+      key={project.id}
+      borderLeft={project.color}
+      onClick={() => navigate(`/projects/${project.id}`)}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div>
+          <h3 style={{ marginBottom: 2 }}>{project.name}</h3>
+          <div style={{ fontSize: 13, color: '#64748B' }}>{project.client_name || 'No client'}</div>
+        </div>
+        <Badge label={projectTypeLabels[project.project_type] || project.project_type} color={projectTypeColors[project.project_type] || '#94A3B8'} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, fontSize: 13, color: '#475569' }}>
+        {project.active_sprint_name ? (
+          <span><strong style={{ color: '#0F172A' }}>{project.active_sprint_name}</strong> active</span>
+        ) : (
+          <span style={{ color: '#94A3B8' }}>No active sprint</span>
+        )}
+        <span>{project.completed_items}/{project.total_items} items</span>
+      </div>
+      <ProgressBar value={project.progress_percentage} showLabel />
+    </Card>
+  );
+
+  return (
+    <>
+      {personalProjects.length > 0 && (
+        <>
+          <h2 style={{ marginBottom: 16 }}>Personal Projects</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 20, marginBottom: 32 }}>
+            {personalProjects.map(renderProjectCard)}
+          </div>
+        </>
+      )}
+      {personalProjects.length === 0 && orgGroups.size === 0 && (
+        <h2 style={{ marginBottom: 16 }}>Your Projects</h2>
+      )}
+      {Array.from(orgGroups.entries()).map(([orgId, group]) => (
+        <div key={orgId} style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8,
+              background: 'linear-gradient(135deg, #2563EB, #8B5CF6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Building2 size={14} color="#FFFFFF" strokeWidth={2} />
+            </div>
+            <h2
+              style={{ cursor: 'pointer' }}
+              onClick={() => navigate(`/org/${group.slug}`)}
+            >
+              {group.name}
+            </h2>
+            <span style={{ fontSize: 13, color: '#64748B' }}>
+              {group.projects.length} {group.projects.length === 1 ? 'project' : 'projects'}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 20 }}>
+            {group.projects.map(renderProjectCard)}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -71,11 +153,21 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [upcomingItems, setUpcomingItems] = useState<BacklogItem[]>([]);
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Slide panel state
   const [panelOpen, setPanelOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Org create panel state
+  const [orgPanelOpen, setOrgPanelOpen] = useState(false);
+  const [orgCreating, setOrgCreating] = useState(false);
+  const [orgCreateError, setOrgCreateError] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState('');
+  const [orgDescription, setOrgDescription] = useState('');
 
   // Form fields
   const [formName, setFormName] = useState('');
@@ -83,6 +175,15 @@ export default function DashboardPage() {
   const [formDescription, setFormDescription] = useState('');
   const [formType, setFormType] = useState('contract');
   const [formDuration, setFormDuration] = useState(2);
+  const [formOrgId, setFormOrgId] = useState('');
+
+  // Open org panel from URL param (sidebar link)
+  useEffect(() => {
+    if (searchParams.get('createOrg') === '1') {
+      setOrgPanelOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Fetch projects and stats on mount
   useEffect(() => {
@@ -91,13 +192,15 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         setError(null);
-        const [projectsRes, statsRes] = await Promise.all([
+        const [projectsRes, statsRes, orgsRes] = await Promise.all([
           projectsApi.list(),
           dashboardApi.stats().catch(() => null),
+          organizationsApi.list().catch(() => ({ data: [] as Organization[] })),
         ]);
         if (!cancelled) {
           setProjects(projectsRes.data);
           if (statsRes) setStats(statsRes.data);
+          setOrgs(orgsRes.data);
           // Fetch upcoming due items from all projects
           const upcomingPromises = projectsRes.data.map((p: Project) =>
             backlogApi.upcoming(p.id).catch(() => ({ data: [] }))
@@ -208,6 +311,7 @@ export default function DashboardPage() {
         description: formDescription.trim() || undefined,
         project_type: formType,
         default_sprint_duration: formDuration,
+        org_id: formOrgId || undefined,
       });
       setProjects((prev) => [...prev, res.data]);
       setPanelOpen(false);
@@ -228,12 +332,39 @@ export default function DashboardPage() {
     setFormDescription('');
     setFormType('contract');
     setFormDuration(2);
+    setFormOrgId('');
     setCreateError(null);
   };
 
   const openPanel = () => {
     resetForm();
     setPanelOpen(true);
+  };
+
+  const handleCreateOrg = async () => {
+    if (!orgName.trim()) {
+      setOrgCreateError('Organization name is required');
+      return;
+    }
+    setOrgCreating(true);
+    setOrgCreateError(null);
+    try {
+      const res = await organizationsApi.create({
+        name: orgName.trim(),
+        description: orgDescription.trim() || undefined,
+      });
+      setOrgs((prev: Organization[]) => [...prev, res.data]);
+      setOrgPanelOpen(false);
+      setOrgName('');
+      setOrgDescription('');
+      addToast('success', `Organization "${res.data.name}" created`);
+      navigate(`/org/${res.data.slug}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to create organization';
+      setOrgCreateError(message);
+    } finally {
+      setOrgCreating(false);
+    }
   };
 
   return (
@@ -255,12 +386,21 @@ export default function DashboardPage() {
             Here's what's happening across your projects
           </p>
         </div>
-        <Button
-          icon={<Plus size={16} strokeWidth={2} />}
-          onClick={openPanel}
-        >
-          New Project
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button
+            variant="secondary"
+            icon={<Building2 size={16} strokeWidth={2} />}
+            onClick={() => { setOrgName(''); setOrgDescription(''); setOrgCreateError(null); setOrgPanelOpen(true); }}
+          >
+            New Organization
+          </Button>
+          <Button
+            icon={<Plus size={16} strokeWidth={2} />}
+            onClick={openPanel}
+          >
+            New Project
+          </Button>
+        </div>
       </div>
 
       {/* Stat Cards */}
@@ -363,7 +503,7 @@ export default function DashboardPage() {
       {/* Project Cards */}
       {!loading && !error && projects.length === 0 && (
         <EmptyState
-          icon="\u{1F4CB}"
+          icon={<FolderKanban size={48} strokeWidth={1.5} color="#94A3B8" />}
           title="No projects yet"
           description="Create your first project to get started"
           action={{
@@ -374,88 +514,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {!loading && projects.length > 0 && (
-        <>
-          <h2 style={{ marginBottom: 16 }}>Your Projects</h2>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))',
-              gap: 20,
-            }}
-          >
-            {loading
-              ? Array.from({ length: 3 }).map((_, i) => (
-                  <CardSkeleton key={i} />
-                ))
-              : projects.map((project) => {
-                  const progress = project.progress_percentage;
-                  return (
-                    <Card
-                      key={project.id}
-                      borderLeft={project.color}
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          justifyContent: 'space-between',
-                          marginBottom: 12,
-                        }}
-                      >
-                        <div>
-                          <h3 style={{ marginBottom: 2 }}>{project.name}</h3>
-                          <div style={{ fontSize: 13, color: '#64748B' }}>
-                            {project.client_name || 'No client'}
-                          </div>
-                        </div>
-                        <Badge
-                          label={
-                            projectTypeLabels[project.project_type] ||
-                            project.project_type
-                          }
-                          color={
-                            projectTypeColors[project.project_type] ||
-                            '#94A3B8'
-                          }
-                        />
-                      </div>
-
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 16,
-                          marginBottom: 16,
-                          fontSize: 13,
-                          color: '#475569',
-                        }}
-                      >
-                        {project.active_sprint_name ? (
-                          <span>
-                            <strong style={{ color: '#0F172A' }}>
-                              {project.active_sprint_name}
-                            </strong>{' '}
-                            active
-                          </span>
-                        ) : (
-                          <span style={{ color: '#94A3B8' }}>
-                            No active sprint
-                          </span>
-                        )}
-                        <span>
-                          {project.completed_items}/{project.total_items} items
-                        </span>
-                      </div>
-
-                      <ProgressBar value={progress} showLabel />
-                    </Card>
-                  );
-                })}
-          </div>
-        </>
-      )}
+      {!loading && projects.length > 0 && <ProjectGroups projects={projects} navigate={navigate} />}
 
       {/* Upcoming Due Dates */}
       {!loading && upcomingItems.length > 0 && (() => {
@@ -632,7 +691,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Sprint Duration */}
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Sprint Duration</label>
             <select
               value={formDuration}
@@ -655,6 +714,33 @@ export default function DashboardPage() {
               <option value={4}>4 weeks</option>
             </select>
           </div>
+
+          {/* Organization */}
+          {orgs.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>Organization</label>
+              <select
+                value={formOrgId}
+                onChange={(e) => setFormOrgId(e.target.value)}
+                style={{
+                  ...inputStyle,
+                  appearance: 'auto' as const,
+                  backgroundColor: '#FFFFFF',
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#2563EB';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#E2E8F0';
+                }}
+              >
+                <option value="">Personal (no organization)</option>
+                {orgs.filter((o) => o.my_role === 'owner' || o.my_role === 'admin').map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Error */}
           {createError && (
@@ -681,6 +767,68 @@ export default function DashboardPage() {
             style={{ width: '100%', justifyContent: 'center' }}
           >
             Create Project
+          </Button>
+        </div>
+      </SlidePanel>
+
+      {/* Create Organization Slide Panel */}
+      <SlidePanel
+        isOpen={orgPanelOpen}
+        onClose={() => setOrgPanelOpen(false)}
+        title="Create Organization"
+        width={420}
+      >
+        <div style={{ padding: 20 }}>
+          <p style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>
+            Organizations let you group projects and collaborate with your team.
+          </p>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>
+              Organization Name <span style={{ color: '#EF4444' }}>*</span>
+            </label>
+            <input
+              type="text"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              placeholder="e.g. Acme Corp"
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#2563EB'; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={labelStyle}>Description</label>
+            <textarea
+              value={orgDescription}
+              onChange={(e) => setOrgDescription(e.target.value)}
+              placeholder="What does this organization do?"
+              rows={3}
+              style={{ ...inputStyle, minHeight: 80, resize: 'vertical' as const, fontFamily: 'inherit' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#2563EB'; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; }}
+            />
+          </div>
+
+          {orgCreateError && (
+            <div style={{
+              padding: '10px 14px', backgroundColor: '#FEF2F2',
+              border: '1px solid #FECACA', borderRadius: 8,
+              color: '#DC2626', fontSize: 13, marginBottom: 16,
+            }}>
+              {orgCreateError}
+            </div>
+          )}
+
+          <Button
+            onClick={handleCreateOrg}
+            loading={orgCreating}
+            disabled={!orgName.trim()}
+            style={{ width: '100%', justifyContent: 'center' }}
+            icon={<Building2 size={16} strokeWidth={2} />}
+          >
+            Create Organization
           </Button>
         </div>
       </SlidePanel>

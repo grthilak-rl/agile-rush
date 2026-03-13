@@ -13,6 +13,7 @@ from app.core.notifications import create_notification
 from app.models.user import User
 from app.models.project import Project
 from app.models.project_member import ProjectMember, MemberRole, MemberStatus
+from app.models.org_member import OrgMember, OrgRole, OrgMemberStatus
 from app.models.backlog_item import BacklogItem
 from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.models.notification import NotificationType
@@ -36,6 +37,32 @@ class RoleUpdateRequest(BaseModel):
 
 class TransferOwnershipRequest(BaseModel):
     new_owner_id: str
+
+
+def _ensure_org_membership(db: Session, project: Project, user_id: str, invited_by: str = None):
+    """If the project belongs to an org, ensure the user is also an org member.
+    Adds them as a 'member' role if they aren't already in the org."""
+    if not project.org_id or not user_id:
+        return
+
+    existing = db.query(OrgMember).filter(
+        OrgMember.org_id == project.org_id,
+        OrgMember.user_id == user_id,
+        OrgMember.status.in_([OrgMemberStatus.active, OrgMemberStatus.pending]),
+    ).first()
+
+    if existing:
+        return  # Already in the org
+
+    org_member = OrgMember(
+        org_id=project.org_id,
+        user_id=user_id,
+        role=OrgRole.member,
+        status=OrgMemberStatus.active,
+        invited_by=invited_by,
+        joined_at=datetime.now(timezone.utc),
+    )
+    db.add(org_member)
 
 
 def _member_response(member: ProjectMember) -> dict:
@@ -207,6 +234,9 @@ def add_member(
         joined_at=datetime.now(timezone.utc),
     )
     db.add(member)
+
+    # Auto-add to org if this is an org project
+    _ensure_org_membership(db, project, target_user.id, invited_by=current_user.id)
 
     # Activity log
     log = ActivityLog(
@@ -383,6 +413,11 @@ def accept_invitation(
 
     member.status = MemberStatus.active
     member.joined_at = datetime.now(timezone.utc)
+
+    # Auto-add to org if this is an org project
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if project:
+        _ensure_org_membership(db, project, current_user.id, invited_by=member.invited_by)
 
     # Activity log
     log = ActivityLog(
@@ -658,6 +693,9 @@ def approve_join_request(
 
     member.status = MemberStatus.active
     member.joined_at = datetime.now(timezone.utc)
+
+    # Auto-add to org if this is an org project
+    _ensure_org_membership(db, project, member.user_id, invited_by=current_user.id)
 
     # Activity log
     log = ActivityLog(

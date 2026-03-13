@@ -38,3 +38,5 @@ class User(Base):
     memberships = relationship("ProjectMember", back_populates="user", foreign_keys="ProjectMember.user_id")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
+    owned_organizations = relationship("Organization", back_populates="owner")
+    org_memberships = relationship("OrgMember", back_populates="user", foreign_keys="OrgMember.user_id")

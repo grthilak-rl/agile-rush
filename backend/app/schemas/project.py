@@ -11,6 +11,7 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = None
     project_type: Optional[str] = "contract"
     default_sprint_duration: Optional[int] = 2
+    org_id: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -29,6 +30,10 @@ class ProjectResponse(BaseModel):
     project_type: str
     default_sprint_duration: int
     owner_id: UUID
+    org_id: Optional[str] = None
+    org_name: Optional[str] = None
+    org_slug: Optional[str] = None
+    is_personal: bool = True
     color: str
     created_at: datetime
     updated_at: datetime

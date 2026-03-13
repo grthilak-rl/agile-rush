@@ -15,6 +15,7 @@ from app.models.project import Project
 from app.models.sprint import Sprint, SprintStatus
 from app.models.backlog_item import BacklogItem, ItemStatus
 from app.models.retro_item import RetroItem
+from app.models.daily_snapshot import DailySnapshot
 from app.models.activity_log import ActivityLog, ActionType, EntityType
 from app.models.notification import NotificationType
 from app.schemas.sprint import SprintCreate, SprintUpdate, SprintComplete, SprintResponse
@@ -385,13 +386,13 @@ def delete_sprint(
     if not sprint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
 
-    if sprint.status == SprintStatus.active:
+    items = db.query(BacklogItem).filter(BacklogItem.sprint_id == sprint_id).all()
+
+    if sprint.status == SprintStatus.active and len(items) > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete an active sprint. Complete it first.",
+            detail="Cannot delete an active sprint with items. Complete it first or remove all items.",
         )
-
-    items = db.query(BacklogItem).filter(BacklogItem.sprint_id == sprint_id).all()
     items_count = len(items)
     for item in items:
         item.sprint_id = None
@@ -399,6 +400,7 @@ def delete_sprint(
             item.status = ItemStatus.backlog
 
     db.query(RetroItem).filter(RetroItem.sprint_id == sprint_id).delete()
+    db.query(DailySnapshot).filter(DailySnapshot.sprint_id == sprint_id).delete()
 
     create_activity(
         db=db,

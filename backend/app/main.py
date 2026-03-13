@@ -32,15 +32,85 @@ from app.api.ws import router as ws_router
 from app.api.calendar import router as calendar_router
 from app.api.imports import router as imports_router
 from app.api.admin import router as admin_router
+from app.api.organizations import router as organizations_router
 
 # Import all models so they are registered with Base.metadata
 import app.models  # noqa: F401
 
 
+def _sync_project_members_to_orgs():
+    """Backfill: ensure every active project member of an org project
+    also has an active OrgMember record in the parent org."""
+    from datetime import datetime, timezone
+    from app.database import SessionLocal
+    from app.models.project import Project
+    from app.models.project_member import ProjectMember, MemberStatus
+    from app.models.org_member import OrgMember, OrgRole, OrgMemberStatus
+
+    db = SessionLocal()
+    try:
+        # Find all active project members on org projects
+        org_project_members = (
+            db.query(ProjectMember.user_id, Project.org_id, Project.owner_id)
+            .join(Project, ProjectMember.project_id == Project.id)
+            .filter(
+                Project.org_id.isnot(None),
+                ProjectMember.user_id.isnot(None),
+                ProjectMember.status == MemberStatus.active,
+            )
+            .all()
+        )
+
+        # Also include project owners of org projects
+        org_project_owners = (
+            db.query(Project.owner_id, Project.org_id)
+            .filter(Project.org_id.isnot(None))
+            .all()
+        )
+
+        # Collect unique (user_id, org_id) pairs that should exist
+        needed = set()
+        for user_id, org_id, _ in org_project_members:
+            needed.add((user_id, org_id))
+        for owner_id, org_id in org_project_owners:
+            needed.add((owner_id, org_id))
+
+        created = 0
+        for user_id, org_id in needed:
+            exists = db.query(OrgMember).filter(
+                OrgMember.org_id == org_id,
+                OrgMember.user_id == user_id,
+                OrgMember.status.in_([OrgMemberStatus.active, OrgMemberStatus.pending]),
+            ).first()
+            if not exists:
+                db.add(OrgMember(
+                    org_id=org_id,
+                    user_id=user_id,
+                    role=OrgRole.member,
+                    status=OrgMemberStatus.active,
+                    joined_at=datetime.now(timezone.utc),
+                ))
+                created += 1
+
+        if created:
+            db.commit()
+            print(f"[startup] Synced {created} project member(s) into their org.")
+    except Exception as e:
+        db.rollback()
+        print(f"[startup] Org member sync skipped: {e}")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all tables on startup (for dev convenience)
-    Base.metadata.create_all(bind=engine)
+    # Run alembic migrations on startup
+    from alembic.config import Config
+    from alembic import command
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
+    # Backfill: sync project members → org members
+    _sync_project_members_to_orgs()
     # Store event loop reference for sync->async WebSocket broadcasts
     from app.core.websocket import set_event_loop
     set_event_loop(asyncio.get_running_loop())
@@ -91,6 +161,7 @@ app.include_router(ws_router)
 app.include_router(calendar_router)
 app.include_router(imports_router)
 app.include_router(admin_router)
+app.include_router(organizations_router)
 
 
 @app.get("/")

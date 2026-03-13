@@ -10,6 +10,8 @@ from app.models.notification import Notification, NotificationType
 from app.models.api_key import ApiKey
 from app.models.attachment import Attachment
 from app.models.comment import Comment
+from app.models.organization import Organization, OrgPlan
+from app.models.org_member import OrgMember, OrgRole, OrgMemberStatus
 
 __all__ = [
     "User",
@@ -35,4 +37,9 @@ __all__ = [
     "ApiKey",
     "Attachment",
     "Comment",
+    "Organization",
+    "OrgPlan",
+    "OrgMember",
+    "OrgRole",
+    "OrgMemberStatus",
 ]

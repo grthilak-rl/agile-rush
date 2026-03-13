@@ -24,6 +24,9 @@ import type {
   Comment,
   MemberSearchResult,
   NotificationPreferences,
+  Organization,
+  OrganizationDetail,
+  OrgMemberItem,
 } from '../types';
 
 // In dev, Vite proxy forwards /api -> http://localhost:8000
@@ -93,7 +96,12 @@ export const projectsApi = {
     description?: string;
     project_type?: string;
     default_sprint_duration?: number;
+    org_id?: string;
   }) => api.post<Project>('/projects/', data),
+  moveToOrg: (id: string, orgId: string) =>
+    api.post<Project>(`/projects/${id}/move-to-org`, { org_id: orgId }),
+  moveToPersonal: (id: string) =>
+    api.post<Project>(`/projects/${id}/move-to-personal`),
   get: (id: string) => api.get<Project>(`/projects/${id}`),
   update: (id: string, data: Partial<Project>) =>
     api.patch<Project>(`/projects/${id}`, data),
@@ -438,6 +446,37 @@ export const adminApi = {
   listProjects: (params?: { page?: number; per_page?: number; q?: string }) =>
     api.get<AdminProjectsResponse>('/admin/projects', { params }),
   deleteProject: (projectId: string) => api.delete(`/admin/projects/${projectId}`),
+};
+
+// Organizations
+export const organizationsApi = {
+  list: () => api.get<Organization[]>('/organizations/'),
+  create: (data: { name: string; description?: string }) =>
+    api.post<Organization>('/organizations/', data),
+  get: (orgId: string) => api.get<OrganizationDetail>(`/organizations/${orgId}`),
+  getBySlug: (slug: string) => api.get<OrganizationDetail>(`/organizations/by-slug/${slug}`),
+  update: (orgId: string, data: { name?: string; description?: string; logo_url?: string }) =>
+    api.patch(`/organizations/${orgId}`, data),
+  delete: (orgId: string, data: { confirm_name: string; transfer_projects?: boolean }) =>
+    api.delete(`/organizations/${orgId}`, { data }),
+  // Members
+  listMembers: (orgId: string) => api.get<OrgMemberItem[]>(`/organizations/${orgId}/members`),
+  inviteMember: (orgId: string, data: { email: string; role?: string }) =>
+    api.post<{ member: OrgMemberItem; status: string }>(`/organizations/${orgId}/members/invite`, data),
+  acceptInvitation: (orgId: string) =>
+    api.post<OrgMemberItem>(`/organizations/${orgId}/members/accept`),
+  declineInvitation: (orgId: string) =>
+    api.post(`/organizations/${orgId}/members/decline`),
+  updateMemberRole: (orgId: string, memberId: string, data: { role: string }) =>
+    api.patch<OrgMemberItem>(`/organizations/${orgId}/members/${memberId}`, data),
+  removeMember: (orgId: string, memberId: string) =>
+    api.delete(`/organizations/${orgId}/members/${memberId}`),
+  transferOwnership: (orgId: string, data: { new_owner_id: string }) =>
+    api.post(`/organizations/${orgId}/members/transfer-ownership`, data),
+  // Projects
+  listProjects: (orgId: string) => api.get<Project[]>(`/organizations/${orgId}/projects`),
+  createProject: (orgId: string, data: { name: string; client_name?: string; description?: string; project_type?: string; default_sprint_duration?: number }) =>
+    api.post<Project>(`/organizations/${orgId}/projects`, data),
 };
 
 export default api;

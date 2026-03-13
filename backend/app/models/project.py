@@ -25,6 +25,7 @@ class Project(Base):
     )
     default_sprint_duration: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     owner_id = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    org_id = mapped_column(String(36), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#2563EB")
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -36,3 +37,4 @@ class Project(Base):
     activity_logs = relationship("ActivityLog", back_populates="project", cascade="all, delete-orphan")
     retro_items = relationship("RetroItem", back_populates="project", cascade="all, delete-orphan")
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
+    organization = relationship("Organization", back_populates="projects")

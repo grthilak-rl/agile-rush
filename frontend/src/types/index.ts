@@ -1,3 +1,10 @@
+export interface UserOrg {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -6,6 +13,42 @@ export interface User {
   created_at: string;
   is_admin?: boolean;
   is_disabled?: boolean;
+  organizations?: UserOrg[];
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo_url: string | null;
+  my_role: 'owner' | 'admin' | 'member';
+  member_count: number;
+  project_count: number;
+  plan: string;
+  created_at: string | null;
+}
+
+export interface OrganizationDetail extends Organization {
+  owner_id: string;
+  max_members: number;
+}
+
+export interface OrgMemberItem {
+  id: string;
+  org_id: string;
+  user_id: string | null;
+  email: string | null;
+  role: 'owner' | 'admin' | 'member';
+  status: 'pending' | 'active' | 'removed';
+  joined_at: string | null;
+  created_at: string | null;
+  user: {
+    id: string;
+    email: string;
+    full_name: string;
+    avatar_url: string | null;
+  } | null;
 }
 
 export interface Project {
@@ -20,6 +63,10 @@ export interface Project {
   total_items: number;
   completed_items: number;
   progress_percentage: number;
+  org_id: string | null;
+  org_name: string | null;
+  org_slug: string | null;
+  is_personal: boolean;
   created_at: string;
   updated_at: string;
 }

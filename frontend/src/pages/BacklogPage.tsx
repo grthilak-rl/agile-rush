@@ -13,7 +13,6 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
-  Play,
   Calendar,
   Paperclip,
   Upload,
@@ -684,25 +683,26 @@ export default function BacklogPage() {
 
   const planningSprint = sprints.find((s) => s.status === 'planning');
 
-  const handleStartSprint = useCallback(async () => {
+  const handleCreateSprint = useCallback(async () => {
     if (!projectId) return;
     setStartingSprint(true);
     try {
-      let sprint = planningSprint;
-      if (!sprint) {
+      if (planningSprint) {
+        // Already have a planning sprint, go to its planning page
+        navigate(`/projects/${projectId}/sprints/${planningSprint.id}/plan`);
+      } else {
         const createRes = await sprintsApi.create(projectId);
-        sprint = createRes.data;
+        const sprint = createRes.data;
+        addToast('success', `${sprint.name} created`);
+        navigate(`/projects/${projectId}/sprints/${sprint.id}/plan`);
       }
-      await sprintsApi.start(projectId, sprint.id);
-      addToast('success', `${sprint.name} started`);
-      await loadData();
     } catch (err: unknown) {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start sprint';
+      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to create sprint';
       addToast('error', message);
     } finally {
       setStartingSprint(false);
     }
-  }, [projectId, planningSprint, addToast, loadData]);
+  }, [projectId, planningSprint, addToast, navigate]);
 
   // -----------------------------------------------------------------------
   // Search debounce
@@ -2619,7 +2619,7 @@ export default function BacklogPage() {
                   No active sprint
                 </span>
                 <span style={{ fontSize: 13, color: '#0284C7', marginLeft: 8 }}>
-                  Start a sprint to move items from backlog to the board.
+                  Create a sprint and plan it before starting.
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -2632,11 +2632,11 @@ export default function BacklogPage() {
                 </Button>
                 <Button
                   size="sm"
-                  icon={<Play size={14} />}
-                  onClick={handleStartSprint}
+                  icon={<Plus size={14} />}
+                  onClick={handleCreateSprint}
                   loading={startingSprint}
                 >
-                  {planningSprint ? 'Start Sprint' : 'Create & Start Sprint'}
+                  {planningSprint ? 'Plan Sprint' : 'Create Sprint'}
                 </Button>
               </div>
             </div>

@@ -1,6 +1,7 @@
 """
 Seed script for AgileRush database.
-Run with: python -m app.seed
+Run with: python -m app.seed          (safe: skips if data exists)
+          python -m app.seed --force   (destructive: wipes and re-seeds)
 """
 
 from datetime import datetime, timedelta, timezone, date
@@ -18,13 +19,35 @@ from app.models.daily_snapshot import DailySnapshot
 from app.models.project_member import ProjectMember, MemberRole, MemberStatus
 from app.models.notification import Notification, NotificationType
 from app.models.api_key import ApiKey
+from app.models.organization import Organization, OrgPlan
+from app.models.org_member import OrgMember, OrgRole, OrgMemberStatus
 
 
-def seed():
+def seed(force=False):
+    # Safety check: refuse to wipe a database that already has data
+    try:
+        db = SessionLocal()
+        existing_users = db.query(User).count()
+        db.close()
+        if existing_users > 0 and not force:
+            print(f"Database already has {existing_users} users.")
+            print("This will DROP ALL TABLES and recreate them, destroying ALL data.")
+            print("Run with --force to confirm: python -m app.seed --force")
+            return
+    except Exception:
+        pass  # Tables may not exist yet, that's fine
+
     print("Dropping all tables...")
     Base.metadata.drop_all(bind=engine)
     print("Creating all tables...")
     Base.metadata.create_all(bind=engine)
+
+    # Stamp alembic to latest so migrations don't re-run
+    from alembic.config import Config
+    from alembic import command
+    alembic_cfg = Config("alembic.ini")
+    command.stamp(alembic_cfg, "head")
+    print("Alembic stamped to head.")
 
     db = SessionLocal()
 
@@ -35,7 +58,7 @@ def seed():
             id=str(uuid4()),
             email="raj@agilerush.com",
             full_name="Rajthilak",
-            hashed_password=hash_password("password123"),
+            hashed_password=hash_password("Kalitjar$01"),
         )
         db.add(user)
         db.flush()
@@ -57,8 +80,47 @@ def seed():
         db.add_all([alice, bob])
         db.flush()
 
+        # ---- Organization ----
+        print("Creating organization...")
+        techcorp = Organization(
+            id=str(uuid4()),
+            name="TechCorp",
+            slug="techcorp",
+            description="Cloud consulting company",
+            owner_id=user.id,
+            plan=OrgPlan.free,
+            max_members=5,
+        )
+        db.add(techcorp)
+        db.flush()
+
+        # ---- Org Members ----
+        print("Creating org members...")
+        org_members = [
+            OrgMember(
+                id=str(uuid4()), org_id=techcorp.id, user_id=user.id,
+                role=OrgRole.owner, status=OrgMemberStatus.active,
+                joined_at=datetime.now(timezone.utc) - timedelta(days=30),
+            ),
+            OrgMember(
+                id=str(uuid4()), org_id=techcorp.id, user_id=alice.id,
+                role=OrgRole.admin, status=OrgMemberStatus.active,
+                invited_by=user.id,
+                joined_at=datetime.now(timezone.utc) - timedelta(days=20),
+            ),
+            OrgMember(
+                id=str(uuid4()), org_id=techcorp.id, user_id=bob.id,
+                role=OrgRole.member, status=OrgMemberStatus.active,
+                invited_by=user.id,
+                joined_at=datetime.now(timezone.utc) - timedelta(days=15),
+            ),
+        ]
+        db.add_all(org_members)
+        db.flush()
+
         # ---- Projects ----
         print("Creating projects...")
+        # Phoenix Platform belongs to TechCorp org
         project1 = Project(
             id=str(uuid4()),
             name="Phoenix Platform",
@@ -67,8 +129,10 @@ def seed():
             project_type=ProjectType.contract,
             default_sprint_duration=2,
             owner_id=user.id,
+            org_id=techcorp.id,
             color="#2563EB",
         )
+        # MedConnect Portal is a personal project
         project2 = Project(
             id=str(uuid4()),
             name="MedConnect Portal",
@@ -109,7 +173,6 @@ def seed():
         now = datetime.now(timezone.utc)
         today = date.today()
 
-        # Project 1 sprints
         s12_start = today - timedelta(days=42)
         s12_end = s12_start + timedelta(days=14)
         sprint_p1_12 = Sprint(
@@ -143,7 +206,6 @@ def seed():
             sprint_number=15, duration_weeks=2, status=SprintStatus.planning,
         )
 
-        # Project 2 sprints
         s7_start = today - timedelta(days=28)
         s7_end = s7_start + timedelta(days=14)
         sprint_p2_7 = Sprint(
@@ -165,7 +227,6 @@ def seed():
         # ---- Backlog Items ----
         print("Creating backlog items...")
 
-        # Sprint 12 items (21 pts, all done)
         items_s12 = [
             BacklogItem(id=str(uuid4()), project_id=project1.id, sprint_id=sprint_p1_12.id,
                 title="Set up GitHub Actions CI pipeline", type=ItemType.task, priority=Priority.high,
@@ -191,7 +252,6 @@ def seed():
         db.add_all(items_s12)
         db.flush()
 
-        # Sprint 13 items (26 pts, all done)
         items_s13 = [
             BacklogItem(id=str(uuid4()), project_id=project1.id, sprint_id=sprint_p1_13.id,
                 title="Role-based access control system", type=ItemType.story, priority=Priority.critical,
@@ -227,7 +287,6 @@ def seed():
         db.add_all(items_s13)
         db.flush()
 
-        # Sprint 14 items (32 pts, 6 done)
         items_p1 = [
             BacklogItem(id=str(uuid4()), project_id=project1.id, sprint_id=sprint1.id,
                 title="User authentication with OAuth 2.0",
@@ -283,7 +342,6 @@ def seed():
         db.add_all(items_p1)
         db.flush()
 
-        # Project 2 - Sprint 7 items (15 pts, all done)
         items_s7 = [
             BacklogItem(id=str(uuid4()), project_id=project2.id, sprint_id=sprint_p2_7.id,
                 title="Patient registration form", type=ItemType.story, priority=Priority.critical,
@@ -304,7 +362,6 @@ def seed():
         db.add_all(items_s7)
         db.flush()
 
-        # Project 2 - Sprint 8 & backlog items
         items_p2 = [
             BacklogItem(id=str(uuid4()), project_id=project2.id, sprint_id=sprint2.id,
                 title="Patient intake form builder",
@@ -361,19 +418,12 @@ def seed():
                     remaining_points=remaining, items_count=items_count,
                 ))
 
-        # Sprint 12: 21 pts, all done
         create_snapshots(sprint_p1_12.id, s12_start, s12_end, 21,
             [21, 21, 21, 16, 16, 13, 13, 13, 8, 8, 5, 5, 0, 0, 0], 4)
-
-        # Sprint 13: 26 pts, all done
         create_snapshots(sprint_p1_13.id, s13_start, s13_end, 26,
             [26, 26, 26, 26, 18, 18, 18, 13, 13, 8, 8, 5, 3, 0, 0], 6)
-
-        # Sprint 14: 32 pts, 6 done so far (active)
         create_snapshots(sprint1.id, s14_start, s14_end, 32,
             [32, 32, 29, 29, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26], 5)
-
-        # Sprint 7 (Project 2): 15 pts, all done
         create_snapshots(sprint_p2_7.id, s7_start, s7_end, 15,
             [15, 15, 15, 13, 13, 8, 8, 5, 5, 3, 3, 0, 0, 0, 0], 3)
 
@@ -456,37 +506,28 @@ def seed():
 
         # ---- Assign some items to Alice and Bob ----
         print("Assigning items to team members...")
-        # Assign Dashboard analytics to Alice
         items_p1[1].assignee_id = alice.id
-        # Assign Multi-tenant data isolation to Bob
         items_p1[4].assignee_id = bob.id
-        # Assign Patient portal accessibility audit to Alice
         items_p2[5].assignee_id = alice.id
         db.flush()
 
-        # ---- Add due dates to ~60% of backlog items ----
+        # ---- Add due dates ----
         print("Adding due dates to backlog items...")
-        # 2 overdue items
-        items_p1[0].due_date = today - timedelta(days=2)  # OAuth - overdue
+        items_p1[0].due_date = today - timedelta(days=2)
         items_p1[0].start_date = today - timedelta(days=10)
-        items_p1[2].due_date = today - timedelta(days=1)  # WebSocket bug - overdue
-        # 2 due this week
-        items_p1[1].due_date = today + timedelta(days=2)  # Dashboard analytics - due soon
+        items_p1[2].due_date = today - timedelta(days=1)
+        items_p1[1].due_date = today + timedelta(days=2)
         items_p1[1].start_date = today - timedelta(days=3)
-        items_p2[1].due_date = today + timedelta(days=1)  # Appointment scheduling - due tomorrow
+        items_p2[1].due_date = today + timedelta(days=1)
         items_p2[1].start_date = today - timedelta(days=5)
-        # 2 due next week
-        items_p1[4].due_date = today + timedelta(days=8)  # Multi-tenant - next week
-        items_p2[0].due_date = today + timedelta(days=10)  # Patient intake - next week
+        items_p1[4].due_date = today + timedelta(days=8)
+        items_p2[0].due_date = today + timedelta(days=10)
         items_p2[0].start_date = today - timedelta(days=2)
-        # Rest spread out or null
-        items_p1[6].due_date = today - timedelta(days=3)  # DB optimization - done, past date
-        items_p2[5].due_date = today + timedelta(days=14)  # Accessibility audit - 2 weeks
+        items_p1[6].due_date = today - timedelta(days=3)
+        items_p2[5].due_date = today + timedelta(days=14)
         items_p2[5].start_date = today + timedelta(days=7)
-        items_p1[5].due_date = today + timedelta(days=21)  # Export - 3 weeks
-        items_p2[3].due_date = today + timedelta(days=30)  # Telemedicine - far out
-        # items_p1[3] (rate limiting, done), items_p1[7] (notification), items_p2[2] (dosage, done),
-        # items_p2[4] (EHR), s12/s13 items - all null (no due date)
+        items_p1[5].due_date = today + timedelta(days=21)
+        items_p2[3].due_date = today + timedelta(days=30)
         db.flush()
 
         # ---- Notifications ----
@@ -497,7 +538,7 @@ def seed():
                 id=str(uuid4()), user_id=user.id,
                 type=NotificationType.item_assigned.value,
                 title="Item Assigned",
-                message=f"You were assigned to 'User authentication with OAuth 2.0'",
+                message="You were assigned to 'User authentication with OAuth 2.0'",
                 project_id=project1.id,
                 entity_type="backlog_item", entity_id=items_p1[0].id,
                 is_read=True,
@@ -507,7 +548,7 @@ def seed():
                 id=str(uuid4()), user_id=user.id,
                 type=NotificationType.sprint_started.value,
                 title="Sprint Started",
-                message=f"Sprint 14 has started",
+                message="Sprint 14 has started",
                 project_id=project1.id,
                 entity_type="sprint", entity_id=sprint1.id,
                 is_read=True,
@@ -517,7 +558,7 @@ def seed():
                 id=str(uuid4()), user_id=user.id,
                 type=NotificationType.item_status_changed.value,
                 title="Status Changed",
-                message=f"'Fix memory leak in WebSocket connection' moved to In Review",
+                message="'Fix memory leak in WebSocket connection' moved to In Review",
                 project_id=project1.id,
                 entity_type="backlog_item", entity_id=items_p1[2].id,
                 is_read=False,
@@ -527,7 +568,7 @@ def seed():
                 id=str(uuid4()), user_id=alice.id,
                 type=NotificationType.invitation.value,
                 title="Project Invitation",
-                message=f"You were invited to join Phoenix Platform",
+                message="You were invited to join Phoenix Platform",
                 project_id=project1.id,
                 is_read=True,
                 created_at=now - timedelta(days=10),
@@ -536,7 +577,7 @@ def seed():
                 id=str(uuid4()), user_id=alice.id,
                 type=NotificationType.item_assigned.value,
                 title="Item Assigned",
-                message=f"You were assigned to 'Dashboard analytics widgets'",
+                message="You were assigned to 'Dashboard analytics widgets'",
                 project_id=project1.id,
                 entity_type="backlog_item", entity_id=items_p1[1].id,
                 is_read=False,
@@ -546,7 +587,7 @@ def seed():
                 id=str(uuid4()), user_id=bob.id,
                 type=NotificationType.invitation.value,
                 title="Project Invitation",
-                message=f"You were invited to join Phoenix Platform",
+                message="You were invited to join Phoenix Platform",
                 project_id=project1.id,
                 is_read=True,
                 created_at=now - timedelta(days=8),
@@ -570,14 +611,13 @@ def seed():
         db.commit()
         print()
         print("Seed data created successfully!")
-        print("Seed data created successfully!")
-        print(f"  Users: {user.email}, {alice.email}, {bob.email} (password: password123)")
-        print(f"  Projects: {project1.name}, {project2.name}")
+        print(f"  Users: {user.email} (password: Kalitjar$01), {alice.email}, {bob.email} (password: password123)")
+        print(f"  Organization: {techcorp.name} (slug: {techcorp.slug})")
+        print(f"    Owner: {user.email}, Admin: {alice.email}, Member: {bob.email}")
+        print(f"  Projects: {project1.name} (org: TechCorp), {project2.name} (personal)")
         total_items = len(items_s12) + len(items_s13) + len(items_p1) + len(items_s7) + len(items_p2)
         print(f"  Backlog items: {total_items}")
         print(f"  Sprints: S12, S13 (completed), S14 (active), S15 (planning), S7 (completed), S8 (planning)")
-        print(f"  Daily snapshots: created for S12, S13, S14, S7")
-        print(f"  Team members: Alice (admin on P1, member on P2), Bob (member on P1)")
         print(f"  Notifications: {len(notifications)} sample notifications")
         print(f"  API Key: {test_key}")
 
@@ -590,4 +630,6 @@ def seed():
 
 
 if __name__ == "__main__":
-    seed()
+    import sys
+    force = "--force" in sys.argv
+    seed(force=force)
