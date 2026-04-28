@@ -58,16 +58,6 @@ open http://localhost:5173
 
 The frontend runs on `http://localhost:5173` and proxies API requests to the backend at `http://localhost:8000`.
 
-### Demo Accounts
-
-After seeding, you can log in with:
-
-| Email | Password | Role |
-|-------|----------|------|
-| raj@agilerush.com | password123 | Project Owner |
-| alice@agilerush.com | password123 | Admin / Member |
-| bob@agilerush.com | password123 | Member |
-
 ## Environment Variables
 
 ### Backend
